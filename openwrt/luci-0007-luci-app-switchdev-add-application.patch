@@ -1,0 +1,501 @@
+From 26f550967eb2fe36fc850560cad9a509f14f30fc Mon Sep 17 00:00:00 2001
+From: Andre Brait <andrebrait@gmail.com>
+Date: Sat, 31 Oct 2026 11:15:30 +0000
+Subject: [PATCH] luci-app-switchdev: add application
+
+Add LuCI pages for the switchdev-config service under Network -> Switch
+features: the switch hardware MAC address table with static entries,
+port mirroring sessions and per-port rate limits. Each page shows the
+active state read from bridge and tc, including whether the switch
+offloaded it.
+
+Signed-off-by: Andre Brait <andrebrait@gmail.com>
+---
+ applications/luci-app-switchdev/Makefile      |  14 +++
+ .../resources/view/switchdev/fdb.js           |  83 +++++++++++++
+ .../resources/view/switchdev/mirror.js        | 111 ++++++++++++++++++
+ .../resources/view/switchdev/ratelimit.js     | 107 +++++++++++++++++
+ .../share/luci/menu.d/luci-app-switchdev.json |  39 ++++++
+ .../share/rpcd/acl.d/luci-app-switchdev.json  |  15 +++
+ .../root/usr/share/rpcd/ucode/luci.switchdev  |  58 +++++++++
+ 7 files changed, 427 insertions(+)
+ create mode 100644 applications/luci-app-switchdev/Makefile
+ create mode 100644 applications/luci-app-switchdev/htdocs/luci-static/resources/view/switchdev/fdb.js
+ create mode 100644 applications/luci-app-switchdev/htdocs/luci-static/resources/view/switchdev/mirror.js
+ create mode 100644 applications/luci-app-switchdev/htdocs/luci-static/resources/view/switchdev/ratelimit.js
+ create mode 100644 applications/luci-app-switchdev/root/usr/share/luci/menu.d/luci-app-switchdev.json
+ create mode 100644 applications/luci-app-switchdev/root/usr/share/rpcd/acl.d/luci-app-switchdev.json
+ create mode 100644 applications/luci-app-switchdev/root/usr/share/rpcd/ucode/luci.switchdev
+
+diff --git a/applications/luci-app-switchdev/Makefile b/applications/luci-app-switchdev/Makefile
+new file mode 100644
+index 0000000..b8512d6
+--- /dev/null
++++ b/applications/luci-app-switchdev/Makefile
+@@ -0,0 +1,14 @@
++# Copyright 2026 Andre Brait <andrebrait@gmail.com>
++# This is free software, licensed under the Apache License, Version 2.0
++
++include $(TOPDIR)/rules.mk
++
++LUCI_TITLE:=LuCI support for offloaded switch features
++LUCI_DEPENDS:=+luci-base +switchdev-config
++
++PKG_LICENSE:=Apache-2.0
++PKG_MAINTAINER:=Andre Brait <andrebrait@gmail.com>
++
++include ../../luci.mk
++
++# call BuildPackage - OpenWrt buildroot signature
+diff --git a/applications/luci-app-switchdev/htdocs/luci-static/resources/view/switchdev/fdb.js b/applications/luci-app-switchdev/htdocs/luci-static/resources/view/switchdev/fdb.js
+new file mode 100644
+index 0000000..9735dea
+--- /dev/null
++++ b/applications/luci-app-switchdev/htdocs/luci-static/resources/view/switchdev/fdb.js
+@@ -0,0 +1,83 @@
++'use strict';
++'require view';
++'require form';
++'require poll';
++'require rpc';
++'require uci';
++
++const callGetFdb = rpc.declare({
++	object: 'luci.switchdev',
++	method: 'getFdb',
++	expect: { result: [] }
++});
++
++const callGetBuiltinEthernetPorts = rpc.declare({
++	object: 'luci',
++	method: 'getBuiltinEthernetPorts',
++	expect: { result: [] }
++});
++
++function fdbRows(fdb, ports) {
++	/* "self" entries on a switch port come from the switch's own table, not the bridge's software copy */
++	return fdb.filter((e) => ports.includes(e.ifname) && !e.master && L.toArray(e.flags).includes('self'))
++		.sort((a, b) => L.naturalCompare(a.ifname, b.ifname) || a.mac.localeCompare(b.mac))
++		.map((e) => [
++			e.mac.toUpperCase(),
++			e.ifname,
++			e.vlan ?? '-',
++			(e.state == 'static' || e.state == 'permanent') ? _('Static') : _('Learned')
++		]);
++}
++
++return view.extend({
++	load() {
++		return Promise.all([
++			L.resolveDefault(callGetBuiltinEthernetPorts(), []),
++			L.resolveDefault(callGetFdb(), []),
++			uci.load('switchdev')
++		]);
++	},
++
++	render([ builtinPorts, fdb ]) {
++		const ports = builtinPorts.map((p) => p.device).sort(L.naturalCompare);
++		const m = new form.Map('switchdev', _('MAC address table'),
++			_('The switch hardware address table, per port and VLAN. Static entries pin an address to a port; they are applied by the switchdev service.'));
++
++		let s = m.section(form.GridSection, 'fdb', _('Static entries'));
++		s.anonymous = true;
++		s.addremove = true;
++		s.nodescriptions = true;
++
++		let o = s.option(form.Value, 'mac', _('MAC address'));
++		o.datatype = 'macaddr';
++		o.rmempty = false;
++
++		o = s.option(form.ListValue, 'port', _('Port'));
++		ports.forEach((p) => o.value(p));
++		o.rmempty = false;
++
++		o = s.option(form.Value, 'vlan', _('VLAN'));
++		o.datatype = 'range(1,4094)';
++		o.placeholder = _('any');
++
++		const table = E('table', { 'class': 'table' }, [
++			E('tr', { 'class': 'tr table-titles' }, [
++				E('th', { 'class': 'th' }, _('MAC address')),
++				E('th', { 'class': 'th' }, _('Port')),
++				E('th', { 'class': 'th' }, _('VLAN')),
++				E('th', { 'class': 'th' }, _('Type'))
++			])
++		]);
++
++		cbi_update_table(table, fdbRows(fdb, ports), E('em', _('No entries')));
++		poll.add(() => L.resolveDefault(callGetFdb(), []).then((f) => cbi_update_table(table, fdbRows(f, ports), E('em', _('No entries')))), 10);
++
++		return m.render().then((mapEl) => E([], [
++			mapEl,
++			E('div', { 'class': 'cbi-section' }, [
++				E('h3', _('Current entries')),
++				table
++			])
++		]));
++	}
++});
+diff --git a/applications/luci-app-switchdev/htdocs/luci-static/resources/view/switchdev/mirror.js b/applications/luci-app-switchdev/htdocs/luci-static/resources/view/switchdev/mirror.js
+new file mode 100644
+index 0000000..4de6b13
+--- /dev/null
++++ b/applications/luci-app-switchdev/htdocs/luci-static/resources/view/switchdev/mirror.js
+@@ -0,0 +1,111 @@
++'use strict';
++'require view';
++'require form';
++'require poll';
++'require rpc';
++'require uci';
++
++const callGetTc = rpc.declare({
++	object: 'luci.switchdev',
++	method: 'getTc',
++	params: [ 'devices' ],
++	expect: { result: {} }
++});
++
++const callGetBuiltinEthernetPorts = rpc.declare({
++	object: 'luci',
++	method: 'getBuiltinEthernetPorts',
++	expect: { result: [] }
++});
++
++/* one row per active mirror rule as tc reports it */
++function mirrorRows(tc, ports) {
++	const rows = [];
++
++	for (let port of ports) {
++		for (let dir of [ 'ingress', 'egress' ]) {
++			for (let f of L.toArray(tc[port]?.[dir])) {
++				const opts = f.options ?? {};
++				const act = L.toArray(opts.actions).find((a) => a.kind == 'mirred');
++
++				if (f.kind != 'matchall' || !act)
++					continue;
++
++				rows.push([
++					port,
++					(dir == 'ingress') ? _('Incoming') : _('Outgoing'),
++					act.to_dev ?? '-',
++					opts.in_hw ? _('Yes') : _('No')
++				]);
++			}
++		}
++	}
++
++	return rows;
++}
++
++return view.extend({
++	load() {
++		return L.resolveDefault(callGetBuiltinEthernetPorts(), []).then((builtin) => {
++			const ports = builtin.map((p) => p.device).sort(L.naturalCompare);
++
++			return Promise.all([ ports, L.resolveDefault(callGetTc(ports), {}), uci.load('switchdev') ]);
++		});
++	},
++
++	render([ ports, tc ]) {
++		const m = new form.Map('switchdev', _('Port mirroring'),
++			_('Copy the traffic of one or more ports to a monitoring port. The switch does the copying; a rule it cannot offload is not applied.'));
++
++		let s = m.section(form.GridSection, 'mirror', _('Mirror sessions'));
++		s.anonymous = true;
++		s.addremove = true;
++		s.nodescriptions = true;
++
++		let o = s.option(form.Flag, 'enabled', _('Enabled'));
++		o.default = o.enabled;
++		o.editable = true;
++
++		o = s.option(form.MultiValue, 'source', _('Source ports'));
++		ports.forEach((p) => o.value(p));
++		o.rmempty = false;
++
++		o = s.option(form.ListValue, 'direction', _('Direction'));
++		o.value('both', _('Incoming and outgoing'));
++		o.value('ingress', _('Incoming'));
++		o.value('egress', _('Outgoing'));
++		o.default = 'both';
++		o.textvalue = function(section_id) {
++			return this.vallist[this.keylist.indexOf(this.cfgvalue(section_id) ?? 'both')];
++		};
++
++		o = s.option(form.ListValue, 'target', _('Monitoring port'));
++		ports.forEach((p) => o.value(p));
++		o.rmempty = false;
++		o.validate = function(section_id, value) {
++			const sources = L.toArray(this.section.formvalue(section_id, 'source'));
++
++			return sources.includes(value) ? _('The monitoring port cannot also be a source port') : true;
++		};
++
++		const table = E('table', { 'class': 'table' }, [
++			E('tr', { 'class': 'tr table-titles' }, [
++				E('th', { 'class': 'th' }, _('Source port')),
++				E('th', { 'class': 'th' }, _('Direction')),
++				E('th', { 'class': 'th' }, _('Monitoring port')),
++				E('th', { 'class': 'th' }, _('In hardware'))
++			])
++		]);
++
++		cbi_update_table(table, mirrorRows(tc, ports), E('em', _('No active mirror rules')));
++		poll.add(() => L.resolveDefault(callGetTc(ports), {}).then((t) => cbi_update_table(table, mirrorRows(t, ports), E('em', _('No active mirror rules')))), 10);
++
++		return m.render().then((mapEl) => E([], [
++			mapEl,
++			E('div', { 'class': 'cbi-section' }, [
++				E('h3', _('Active rules')),
++				table
++			])
++		]));
++	}
++});
+diff --git a/applications/luci-app-switchdev/htdocs/luci-static/resources/view/switchdev/ratelimit.js b/applications/luci-app-switchdev/htdocs/luci-static/resources/view/switchdev/ratelimit.js
+new file mode 100644
+index 0000000..b4f8090
+--- /dev/null
++++ b/applications/luci-app-switchdev/htdocs/luci-static/resources/view/switchdev/ratelimit.js
+@@ -0,0 +1,107 @@
++'use strict';
++'require view';
++'require form';
++'require poll';
++'require rpc';
++'require uci';
++
++const callGetTc = rpc.declare({
++	object: 'luci.switchdev',
++	method: 'getTc',
++	params: [ 'devices' ],
++	expect: { result: {} }
++});
++
++const callGetBuiltinEthernetPorts = rpc.declare({
++	object: 'luci',
++	method: 'getBuiltinEthernetPorts',
++	expect: { result: [] }
++});
++
++function formatRate(bytesPerSecond) {
++	const mbit = Math.round(bytesPerSecond * 8 / 1e6);
++
++	return (mbit >= 1000) ? (mbit / 1000) + '\u202fGbit/s' : mbit + '\u202fMbit/s';
++}
++
++/* one row per port with the limits tc reports */
++function limitRows(tc, ports) {
++	return ports.map((port) => {
++		const police = L.toArray(tc[port]?.ingress).map((f) => [ f, L.toArray(f.options?.actions).find((a) => a.kind == 'police') ]).find(([ f, a ]) => a);
++		const tbf = L.toArray(tc[port]?.qdisc).find((q) => q.kind == 'tbf' && q.root);
++		const state = (inHw) => inHw ? _('in hardware') : _('not offloaded');
++
++		return [
++			port,
++			/* tc -j omits the police rate, so show the configured one next to the hardware state */
++			police ? '%s (%s)'.format(formatRate((uci.sections('switchdev', 'ratelimit').find((s) => s.port == port)?.ingress ?? 0) * 125000), state(police[0].options.in_hw)) : _('none'),
++			tbf ? '%s (%s)'.format(formatRate(tbf.options.rate), state(tbf.offloaded)) : _('none')
++		];
++	});
++}
++
++return view.extend({
++	load() {
++		return L.resolveDefault(callGetBuiltinEthernetPorts(), []).then((builtin) => {
++			const ports = builtin.map((p) => p.device).sort(L.naturalCompare);
++
++			return Promise.all([ ports, L.resolveDefault(callGetTc(ports), {}), uci.load('switchdev') ]);
++		});
++	},
++
++	render([ ports, tc ]) {
++		const m = new form.Map('switchdev', _('Rate limiting'),
++			_('Limit the traffic a port accepts (incoming) or sends (outgoing). The switch enforces the limits; a limit it cannot offload is not applied.'));
++
++		let s = m.section(form.GridSection, 'ratelimit', _('Port limits'));
++		s.anonymous = true;
++		s.addremove = true;
++		s.nodescriptions = true;
++
++		let o = s.option(form.Flag, 'enabled', _('Enabled'));
++		o.default = o.enabled;
++		o.editable = true;
++
++		o = s.option(form.ListValue, 'port', _('Port'));
++		ports.forEach((p) => o.value(p));
++		o.rmempty = false;
++		o.validate = function(section_id, value) {
++			const dup = this.section.cfgsections().some((sid) => sid != section_id && this.section.formvalue(sid, 'port') == value);
++
++			return dup ? _('This port already has a limit') : true;
++		};
++
++		o = s.option(form.Value, 'ingress', _('Incoming limit (Mbit/s)'));
++		o.datatype = 'range(1,10000)';
++		o.placeholder = _('none');
++
++		o = s.option(form.Value, 'egress', _('Outgoing limit (Mbit/s)'));
++		o.datatype = 'range(1,10000)';
++		o.placeholder = _('none');
++
++		o = s.option(form.Value, 'burst', _('Burst size'));
++		o.placeholder = '32k';
++		o.datatype = 'string';
++		o.modalonly = true;
++		o.description = _('Bucket size in bytes, with an optional k suffix. The switch caps it at about 64 KiB.');
++
++		const table = E('table', { 'class': 'table' }, [
++			E('tr', { 'class': 'tr table-titles' }, [
++				E('th', { 'class': 'th' }, _('Port')),
++				E('th', { 'class': 'th' }, _('Incoming limit')),
++				E('th', { 'class': 'th' }, _('Outgoing limit'))
++			])
++		]);
++
++		cbi_update_table(table, limitRows(tc, ports));
++		poll.add(() => L.resolveDefault(callGetTc(ports), {}).then((t) => cbi_update_table(table, limitRows(t, ports))), 10);
++
++		return m.render().then((mapEl) => E([], [
++			mapEl,
++			E('div', { 'class': 'cbi-section' }, [
++				E('h3', _('Active limits')),
++				table
++			])
++		]));
++	}
++});
+diff --git a/applications/luci-app-switchdev/root/usr/share/luci/menu.d/luci-app-switchdev.json b/applications/luci-app-switchdev/root/usr/share/luci/menu.d/luci-app-switchdev.json
+new file mode 100644
+index 0000000..063adcb
+--- /dev/null
++++ b/applications/luci-app-switchdev/root/usr/share/luci/menu.d/luci-app-switchdev.json
+@@ -0,0 +1,39 @@
++{
++	"admin/network/switchdev": {
++		"title": "Switch features",
++		"order": 25,
++		"action": {
++			"type": "firstchild"
++		},
++		"depends": {
++			"acl": [ "luci-app-switchdev" ]
++		}
++	},
++
++	"admin/network/switchdev/fdb": {
++		"title": "MAC address table",
++		"order": 1,
++		"action": {
++			"type": "view",
++			"path": "switchdev/fdb"
++		}
++	},
++
++	"admin/network/switchdev/mirror": {
++		"title": "Port mirroring",
++		"order": 2,
++		"action": {
++			"type": "view",
++			"path": "switchdev/mirror"
++		}
++	},
++
++	"admin/network/switchdev/ratelimit": {
++		"title": "Rate limiting",
++		"order": 3,
++		"action": {
++			"type": "view",
++			"path": "switchdev/ratelimit"
++		}
++	}
++}
+diff --git a/applications/luci-app-switchdev/root/usr/share/rpcd/acl.d/luci-app-switchdev.json b/applications/luci-app-switchdev/root/usr/share/rpcd/acl.d/luci-app-switchdev.json
+new file mode 100644
+index 0000000..a8b7b1e
+--- /dev/null
++++ b/applications/luci-app-switchdev/root/usr/share/rpcd/acl.d/luci-app-switchdev.json
+@@ -0,0 +1,15 @@
++{
++	"luci-app-switchdev": {
++		"description": "Grant access to switch FDB, mirroring and rate limiting",
++		"read": {
++			"ubus": {
++				"luci": [ "getBuiltinEthernetPorts" ],
++				"luci.switchdev": [ "getFdb", "getTc" ]
++			},
++			"uci": [ "switchdev" ]
++		},
++		"write": {
++			"uci": [ "switchdev" ]
++		}
++	}
++}
+diff --git a/applications/luci-app-switchdev/root/usr/share/rpcd/ucode/luci.switchdev b/applications/luci-app-switchdev/root/usr/share/rpcd/ucode/luci.switchdev
+new file mode 100644
+index 0000000..f99e254
+--- /dev/null
++++ b/applications/luci-app-switchdev/root/usr/share/rpcd/ucode/luci.switchdev
+@@ -0,0 +1,58 @@
++// Copyright 2026 Andre Brait <andrebrait@gmail.com>
++// Licensed to the public under the Apache License 2.0.
++
++'use strict';
++
++import { popen } from 'fs';
++
++function run_json(cmd) {
++	const fd = popen(`${cmd} 2>/dev/null`);
++
++	if (!fd)
++		return null;
++
++	const out = fd.read('all');
++	fd.close();
++
++	try {
++		return json(out);
++	}
++	catch (e) {
++		return null;
++	}
++}
++
++/* plain interface names only; anything else never reaches the shell */
++function valid_dev(dev) {
++	return type(dev) == 'string' && match(dev, /^[A-Za-z0-9_][A-Za-z0-9_.@-]*$/) != null;
++}
++
++return {
++	'luci.switchdev': {
++		getFdb: {
++			call: function() {
++				return { result: run_json('bridge -j fdb show') ?? [] };
++			}
++		},
++
++		getTc: {
++			args: { devices: [] },
++			call: function(request) {
++				const result = {};
++
++				for (let dev in request.args.devices) {
++					if (!valid_dev(dev))
++						continue;
++
++					result[dev] = {
++						qdisc: run_json(`tc -j qdisc show dev ${dev}`) ?? [],
++						ingress: run_json(`tc -j filter show dev ${dev} ingress`) ?? [],
++						egress: run_json(`tc -j filter show dev ${dev} egress`) ?? []
++					};
++				}
++
++				return { result };
++			}
++		}
++	}
++};
+-- 
+2.47.3
+

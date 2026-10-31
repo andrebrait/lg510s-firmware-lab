@@ -1,0 +1,22 @@
+This repository contains material under several licenses. The full texts
+are in the LICENSES/ directory.
+
+- Tools, tests and other original code (tools/, tests/):
+  GPL-2.0-only, the license of OpenWrt. See LICENSES/GPL-2.0-only.txt.
+
+- Documentation (README.md, docs/):
+  Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0).
+  See LICENSES/CC-BY-SA-4.0.txt.
+
+- Patches (openwrt/, patches/) keep the license of the project they apply to:
+  - OpenWrt board support and switchdev-config: GPL-2.0-only; the device
+    tree source inside the board patch is GPL-2.0-or-later, as stated in
+    its SPDX header.
+  - LuCI patches (openwrt/luci-*.patch): Apache-2.0.
+    See LICENSES/Apache-2.0.txt.
+  - RTLPlayground patch (patches/rtlplayground-*.patch): MIT.
+    See LICENSES/MIT.txt.
+
+Firmware dumps, vendor binaries and anything extracted from the stock
+firmware are not part of this repository and are not covered by these
+licenses.

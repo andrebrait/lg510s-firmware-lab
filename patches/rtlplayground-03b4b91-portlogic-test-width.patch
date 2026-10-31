@@ -1,0 +1,24 @@
+diff --git a/platform/linux/test/test_portlogic.c b/platform/linux/test/test_portlogic.c
+index 4a3aa93..360d8f9 100644
+--- a/platform/linux/test/test_portlogic.c
++++ b/platform/linux/test/test_portlogic.c
+@@ -1,5 +1,6 @@
+ /* portlogic.h on canned link-mode masks: the mode table, the six advertisement bits of
+  * port_phy_adv_get(), `port N <speed>` and `port N duplex`, and the temperature scaling. */
++#include <inttypes.h>
+ #include <stdio.h>
+ 
+ #include "platform.h"
+@@ -7,10 +8,10 @@
+ 
+ static int fails;
+ 
+-static void check(const char *what, long want, long got)
++static void check(const char *what, uint64_t want, uint64_t got)
+ {
+ 	if (want != got) {
+-		printf("FAIL: %s: expected 0x%lx, got 0x%lx\n", what, want, got);
++		printf("FAIL: %s: expected 0x%" PRIx64 ", got 0x%" PRIx64 "\n", what, want, got);
+ 		fails++;
+ 	} else {
+ 		printf("ok:   %s\n", what);

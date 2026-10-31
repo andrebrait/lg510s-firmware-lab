@@ -1,0 +1,214 @@
+From 5316a128394b58ea69201b9d868be337ba55d37d Mon Sep 17 00:00:00 2001
+From: Andre Brait <andrebrait@gmail.com>
+Date: Sat, 31 Oct 2026 11:15:30 +0000
+Subject: [PATCH 2/2] switchdev-config: add package
+
+Add a small service that applies hardware switch features from
+/etc/config/switchdev: static FDB entries through bridge, port mirroring
+through tc matchall/mirred, ingress rate limits through tc flower police
+and egress rate limits through a TBF root qdisc. Rules are added with
+skip_sw, so a setting the switch cannot offload is logged and not
+silently run on the CPU.
+
+Tested on a Realtek RTL9303 (rtl83xx DSA): all four rule types are
+reported as offloaded, and stopping the service removes them.
+
+Signed-off-by: Andre Brait <andrebrait@gmail.com>
+---
+ .../network/config/switchdev-config/Makefile  |  37 ++++++
+ .../switchdev-config/files/switchdev.config   |  19 +++
+ .../switchdev-config/files/switchdev.init     | 112 ++++++++++++++++++
+ 3 files changed, 168 insertions(+)
+ create mode 100644 package/network/config/switchdev-config/Makefile
+ create mode 100644 package/network/config/switchdev-config/files/switchdev.config
+ create mode 100755 package/network/config/switchdev-config/files/switchdev.init
+
+diff --git a/package/network/config/switchdev-config/Makefile b/package/network/config/switchdev-config/Makefile
+new file mode 100644
+index 0000000..1601804
+--- /dev/null
++++ b/package/network/config/switchdev-config/Makefile
+@@ -0,0 +1,37 @@
++include $(TOPDIR)/rules.mk
++
++PKG_NAME:=switchdev-config
++PKG_RELEASE:=1
++PKG_LICENSE:=GPL-2.0-only
++PKG_MAINTAINER:=Andre Brait <andrebrait@gmail.com>
++
++include $(INCLUDE_DIR)/package.mk
++
++define Package/switchdev-config
++  SECTION:=net
++  CATEGORY:=Network
++  TITLE:=UCI configuration for offloaded switch features
++  DEPENDS:=+ip-bridge +tc-full +kmod-sched-flower +kmod-sched-act-police
++  PKGARCH:=all
++endef
++
++define Package/switchdev-config/description
++  Applies static FDB entries, port mirroring and per-port rate limits from
++  /etc/config/switchdev to switchdev ports, using bridge and tc rules that
++  the switch offloads.
++endef
++
++define Package/switchdev-config/conffiles
++/etc/config/switchdev
++endef
++
++define Build/Compile
++endef
++
++define Package/switchdev-config/install
++	$(INSTALL_DIR) $(1)/etc/config $(1)/etc/init.d
++	$(INSTALL_CONF) ./files/switchdev.config $(1)/etc/config/switchdev
++	$(INSTALL_BIN) ./files/switchdev.init $(1)/etc/init.d/switchdev
++endef
++
++$(eval $(call BuildPackage,switchdev-config))
+diff --git a/package/network/config/switchdev-config/files/switchdev.config b/package/network/config/switchdev-config/files/switchdev.config
+new file mode 100644
+index 0000000..d2d3041
+--- /dev/null
++++ b/package/network/config/switchdev-config/files/switchdev.config
+@@ -0,0 +1,19 @@
++# Hardware switch features applied by /etc/init.d/switchdev.
++#
++# config fdb
++#	option mac '00:11:22:33:44:55'
++#	option port 'lan1'
++#	option vlan '1'		# optional
++#
++# config mirror
++#	option enabled '1'
++#	list source 'lan1'
++#	option direction 'both'	# ingress, egress or both
++#	option target 'lan4'
++#
++# config ratelimit
++#	option enabled '1'
++#	option port 'lan2'
++#	option ingress '100'	# Mbit/s, empty for no limit
++#	option egress '100'	# Mbit/s, empty for no limit
++#	option burst '32k'	# bytes, tc size syntax
+diff --git a/package/network/config/switchdev-config/files/switchdev.init b/package/network/config/switchdev-config/files/switchdev.init
+new file mode 100755
+index 0000000..f2b2cb1
+--- /dev/null
++++ b/package/network/config/switchdev-config/files/switchdev.init
+@@ -0,0 +1,112 @@
++#!/bin/sh /etc/rc.common
++# Apply /etc/config/switchdev: port mirroring and rate limits through tc,
++# static FDB entries through bridge. Rules use skip_sw, so a setting the
++# switch cannot offload fails instead of falling back to the CPU.
++
++START=25
++USE_PROCD=1
++
++STATE=/var/run/switchdev
++
++log() {
++	logger -t switchdev "$*"
++}
++
++run() {
++	"$@" 2>/tmp/switchdev.err || log "failed: $* ($(cat /tmp/switchdev.err))"
++	rm -f /tmp/switchdev.err
++}
++
++clear_state() {
++	local dev line
++
++	[ -f "$STATE.clsact" ] && for dev in $(cat "$STATE.clsact"); do
++		tc qdisc del dev "$dev" clsact 2>/dev/null
++	done
++	[ -f "$STATE.root" ] && for dev in $(cat "$STATE.root"); do
++		tc qdisc del dev "$dev" root 2>/dev/null
++	done
++	[ -f "$STATE.fdb" ] && while read -r line; do
++		bridge fdb del $line 2>/dev/null
++	done < "$STATE.fdb"
++	rm -f "$STATE.clsact" "$STATE.root" "$STATE.fdb"
++}
++
++ensure_clsact() {
++	grep -qx "$1" "$STATE.clsact" 2>/dev/null && return
++	run tc qdisc add dev "$1" clsact
++	echo "$1" >> "$STATE.clsact"
++}
++
++apply_mirror() {
++	local cfg="$1" enabled target direction sources src dir
++
++	config_get_bool enabled "$cfg" enabled 1
++	config_get target "$cfg" target
++	config_get direction "$cfg" direction both
++	config_get sources "$cfg" source
++	[ "$enabled" = 1 ] && [ -n "$target" ] || return
++
++	for src in $sources; do
++		[ "$src" = "$target" ] && continue
++		ensure_clsact "$src"
++		for dir in ingress egress; do
++			[ "$direction" = both ] || [ "$direction" = "$dir" ] || continue
++			run tc filter add dev "$src" "$dir" matchall skip_sw \
++				action mirred egress mirror dev "$target"
++		done
++	done
++}
++
++apply_ratelimit() {
++	local cfg="$1" enabled port ingress egress burst
++
++	config_get_bool enabled "$cfg" enabled 1
++	config_get port "$cfg" port
++	config_get ingress "$cfg" ingress
++	config_get egress "$cfg" egress
++	config_get burst "$cfg" burst 32k
++	[ "$enabled" = 1 ] && [ -n "$port" ] || return
++
++	if [ -n "$ingress" ] && [ "$ingress" -gt 0 ]; then
++		ensure_clsact "$port"
++		run tc filter add dev "$port" ingress protocol all flower skip_sw \
++			action police rate "${ingress}mbit" burst "$burst" conform-exceed drop/ok
++	fi
++
++	if [ -n "$egress" ] && [ "$egress" -gt 0 ]; then
++		run tc qdisc replace dev "$port" root tbf rate "${egress}mbit" burst "$burst" latency 1ms
++		echo "$port" >> "$STATE.root"
++	fi
++}
++
++apply_fdb() {
++	local cfg="$1" mac port vlan args
++
++	config_get mac "$cfg" mac
++	config_get port "$cfg" port
++	config_get vlan "$cfg" vlan
++	[ -n "$mac" ] && [ -n "$port" ] || return
++
++	args="$mac dev $port master static${vlan:+ vlan $vlan}"
++	run bridge fdb replace $args
++	echo "$args" >> "$STATE.fdb"
++}
++
++start_service() {
++	clear_state
++	config_load switchdev
++	config_foreach apply_fdb fdb
++	config_foreach apply_mirror mirror
++	config_foreach apply_ratelimit ratelimit
++}
++
++stop_service() {
++	clear_state
++}
++
++service_triggers() {
++	procd_add_reload_trigger switchdev
++	# ports leave and rejoin the bridge when netifd reloads, which drops FDB entries
++	procd_add_raw_trigger "interface.*.up" 2000 /etc/init.d/switchdev reload
++}
+-- 
+2.47.3
+

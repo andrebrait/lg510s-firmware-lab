@@ -1,0 +1,37 @@
+From ea00bb9b5104f8ce042b6f1605831734355840c2 Mon Sep 17 00:00:00 2001
+From: Andre Brait <andrebrait@gmail.com>
+Date: Sat, 31 Oct 2026 03:53:53 +0000
+Subject: [PATCH 1/5] luci-mod-network: add EEE option to device configuration
+
+netifd supports the eee device option, but LuCI offers no way to set it.
+Add it next to the flow control options, with the same Default/Enable/
+Disable choices.
+
+Signed-off-by: Andre Brait <andrebrait@gmail.com>
+---
+ .../htdocs/luci-static/resources/tools/network.js         | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/modules/luci-mod-network/htdocs/luci-static/resources/tools/network.js b/modules/luci-mod-network/htdocs/luci-static/resources/tools/network.js
+index 255a62f..29edfb8 100644
+--- a/modules/luci-mod-network/htdocs/luci-static/resources/tools/network.js
++++ b/modules/luci-mod-network/htdocs/luci-static/resources/tools/network.js
+@@ -1183,6 +1183,14 @@ return baseclass.extend({
+ 		o.value('1', _('Enable'));
+ 		o.value('0', _('Disable'));
+ 
++		o = this.replaceOption(s, 'devgeneral', form.ListValue, 'eee', _('Energy Efficient Ethernet (EEE)'),
++			_('Advertise EEE to the link partner. It is only used if both sides support it.'));
++		o.rmempty = true;
++		o.default = '';
++		o.value('', _('Default'));
++		o.value('1', _('Enable'));
++		o.value('0', _('Disable'));
++
+ 		o = this.replaceOption(s, 'devgeneral', form.Value, 'txqueuelen', _('TX queue length'));
+ 		o.placeholder = dev ? dev._devstate('qlen') : '';
+ 		o.datatype = 'uinteger';
+-- 
+2.47.3
+
+

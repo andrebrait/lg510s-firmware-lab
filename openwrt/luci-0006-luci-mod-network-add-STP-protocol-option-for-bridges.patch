@@ -1,0 +1,37 @@
+From 7682a2d36a0ca0ed6331047eb01c080288c5ead4 Mon Sep 17 00:00:00 2001
+From: Andre Brait <andrebrait@gmail.com>
+Date: Sat, 31 Oct 2026 04:51:57 +0000
+Subject: [PATCH] luci-mod-network: add STP protocol option for bridges
+
+netifd passes the stp_proto bridge option to ustp, which runs RSTP by
+default and also supports STP and MSTP, but LuCI only offers the STP
+on/off flag. Add the protocol choice below it.
+
+Signed-off-by: Andre Brait <andrebrait@gmail.com>
+---
+ .../htdocs/luci-static/resources/tools/network.js        | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/modules/luci-mod-network/htdocs/luci-static/resources/tools/network.js b/modules/luci-mod-network/htdocs/luci-static/resources/tools/network.js
+index 068f1b8..57fa224 100644
+--- a/modules/luci-mod-network/htdocs/luci-static/resources/tools/network.js
++++ b/modules/luci-mod-network/htdocs/luci-static/resources/tools/network.js
+@@ -1046,6 +1046,15 @@ return baseclass.extend({
+ 		o.default = o.disabled;
+ 		o.depends('type', 'bridge');
+ 
++		o = this.replaceOption(s, 'devadvanced', form.ListValue, 'stp_proto', _('STP protocol'),
++			_('Used by the ustp daemon, which defaults to RSTP. Without the ustp package the kernel runs classic STP and ignores this setting.'));
++		o.value('', _('Default'));
++		o.value('stp', _('STP (IEEE 802.1D)'));
++		o.value('rstp', _('RSTP (IEEE 802.1w)'));
++		o.value('mstp', _('MSTP (IEEE 802.1s)'));
++		o.rmempty = true;
++		o.depends({ type: 'bridge', stp: '1' });
++
+ 		o = this.replaceOption(s, 'devadvanced', form.Value, 'hello_time', _('Hello interval'), _('Interval in seconds for STP hello packets'));
+ 		o.placeholder = '1';
+ 		o.datatype = 'range(1, 10)';
+-- 
+2.47.3
+

@@ -1,0 +1,500 @@
+From 20af12ba14be1eaf6ee6cba0a5c6077bc53b0c9e Mon Sep 17 00:00:00 2001
+From: LG510S lab <lab@localhost>
+Date: Fri, 30 Oct 2026 21:26:06 +0000
+Subject: [PATCH] realtek: rtl930x: add Lianguo LG510S-4T2XS
+
+Hardware: RTL9303, one RTL8264B quad 10G PHY on SMI bus 0 addresses 0-3
+(SerDes 2-5, USXGMII), two SFP+ cages on SerDes 7/8 with SoC GPIO and
+I2C master 1 (SCL GPIO 8, SDA GPIO 9/10), 128 MiB RAM, 16 MiB SPI NOR,
+reset button on GPIO 5, SYS LED on GPIO 0, no fan controller.
+
+The port LED configuration reproduces what the stock firmware programs,
+so the LEDs work without U-Boot having initialised the switch.
+
+Only the firmware partition is writable. Installation tested through
+sysupgrade from a TFTP-loaded initramfs.
+---
+ .../etc/uci-defaults/05_lg510s_port_defaults  |  20 ++
+ .../etc/uci-defaults/06_lg510s_lldpd          |  27 ++
+ .../etc/uci-defaults/07_lg510s_snmpd          |  18 ++
+ .../etc/uci-defaults/08_lg510s_https          |  17 ++
+ .../etc/uci-defaults/09_lg510s_mgmt           |  39 +++
+ .../etc/udhcpc.user.d/lg510s-fallback         |   7 +
+ .../base-files/lib/upgrade/keep.d/lg510s      |   1 +
+ .../dts/rtl9303_lianguo_lg510s-4t2xs.dts      | 256 ++++++++++++++++++
+ target/linux/realtek/image/rtl930x.mk         |  18 ++
+ 9 files changed, 403 insertions(+)
+ create mode 100644 target/linux/realtek/base-files/etc/uci-defaults/05_lg510s_port_defaults
+ create mode 100644 target/linux/realtek/base-files/etc/uci-defaults/06_lg510s_lldpd
+ create mode 100644 target/linux/realtek/base-files/etc/uci-defaults/07_lg510s_snmpd
+ create mode 100644 target/linux/realtek/base-files/etc/uci-defaults/08_lg510s_https
+ create mode 100644 target/linux/realtek/base-files/etc/uci-defaults/09_lg510s_mgmt
+ create mode 100644 target/linux/realtek/base-files/etc/udhcpc.user.d/lg510s-fallback
+ create mode 100644 target/linux/realtek/base-files/lib/upgrade/keep.d/lg510s
+ create mode 100644 target/linux/realtek/dts/rtl9303_lianguo_lg510s-4t2xs.dts
+
+diff --git a/target/linux/realtek/base-files/etc/uci-defaults/05_lg510s_port_defaults b/target/linux/realtek/base-files/etc/uci-defaults/05_lg510s_port_defaults
+new file mode 100644
+index 0000000..e5b7e4e
+--- /dev/null
++++ b/target/linux/realtek/base-files/etc/uci-defaults/05_lg510s_port_defaults
+@@ -0,0 +1,20 @@
++. /lib/functions.sh
++
++# Advertise EEE and flow control (pause) on the RTL8264B copper ports; both take effect
++# only if the link partner agrees. The SFP+ ports (10GBASE-R) cannot negotiate either.
++# uci-defaults also run after a sysupgrade that keeps settings: leave existing port sections alone.
++case "$(board_name)" in
++lianguo,lg510s-4t2xs)
++	for port in lan1 lan2 lan3 lan4; do
++		uci -q show network | grep -q "^network\.[^.]*\.name='$port'$" && continue
++		s=$(uci add network device)
++		uci set network.$s.name="$port"
++		uci set network.$s.eee='1'
++		# pause, not rxpause/txpause: netifd forces pause (no autonegotiation) for those.
++		uci set network.$s.pause='1'
++	done
++	uci commit network
++	;;
++esac
++
++exit 0
+diff --git a/target/linux/realtek/base-files/etc/uci-defaults/06_lg510s_lldpd b/target/linux/realtek/base-files/etc/uci-defaults/06_lg510s_lldpd
+new file mode 100644
+index 0000000..dc963b2
+--- /dev/null
++++ b/target/linux/realtek/base-files/etc/uci-defaults/06_lg510s_lldpd
+@@ -0,0 +1,27 @@
++. /lib/functions.sh
++
++# lldpd ships in the image but stays off until the user enables it. luci-app-lldpd
++# keeps that choice in lldpd.config.enabled, which survives a sysupgrade.
++case "$(board_name)" in
++lianguo,lg510s-4t2xs)
++	[ -x /etc/init.d/lldpd ] || exit 0
++	enabled=$(uci -q get lldpd.config.enabled)
++	if [ -z "$enabled" ]; then
++		enabled=0
++		uci set lldpd.config.enabled="$enabled"
++	fi
++	# Describe the switch by its model, as stock does, instead of "OpenWrt ... @ hostname".
++	# Set only while unset, so a description chosen in LuCI survives updates.
++	model=$(cat /tmp/sysinfo/model 2>/dev/null)
++	[ -n "$model" ] && [ -z "$(uci -q get lldpd.config.lldp_description)" ] &&
++		uci set lldpd.config.lldp_description="${model#* }"
++	uci commit lldpd
++	if [ "$enabled" = 1 ]; then
++		/etc/init.d/lldpd enable
++	else
++		/etc/init.d/lldpd disable
++	fi
++	;;
++esac
++
++exit 0
+diff --git a/target/linux/realtek/base-files/etc/uci-defaults/07_lg510s_snmpd b/target/linux/realtek/base-files/etc/uci-defaults/07_lg510s_snmpd
+new file mode 100644
+index 0000000..64e29f5
+--- /dev/null
++++ b/target/linux/realtek/base-files/etc/uci-defaults/07_lg510s_snmpd
+@@ -0,0 +1,18 @@
++. /lib/functions.sh
++
++# snmpd ships in the image but stays off until the user enables it. Its package
++# default says enabled '1', so a marker kept across sysupgrade records that the
++# default was already turned off once and leaves later user choices alone.
++MARKER=/etc/lg510s/snmpd-default-off
++
++case "$(board_name)" in
++lianguo,lg510s-4t2xs)
++	[ -f /etc/config/snmpd ] && [ ! -f "$MARKER" ] || exit 0
++	uci set snmpd.general.enabled='0'
++	uci commit snmpd
++	mkdir -p "${MARKER%/*}"
++	touch "$MARKER"
++	;;
++esac
++
++exit 0
+diff --git a/target/linux/realtek/base-files/etc/uci-defaults/08_lg510s_https b/target/linux/realtek/base-files/etc/uci-defaults/08_lg510s_https
+new file mode 100644
+index 0000000..08ff39b
+--- /dev/null
++++ b/target/linux/realtek/base-files/etc/uci-defaults/08_lg510s_https
+@@ -0,0 +1,17 @@
++. /lib/functions.sh
++
++# Redirect HTTP to HTTPS by default. A marker kept across sysupgrade records that
++# the default was applied once, so a user who turns the redirect off keeps that.
++MARKER=/etc/lg510s/https-redirect-default
++
++case "$(board_name)" in
++lianguo,lg510s-4t2xs)
++	[ -f /etc/config/uhttpd ] && [ ! -f "$MARKER" ] || exit 0
++	uci set uhttpd.main.redirect_https='1'
++	uci commit uhttpd
++	mkdir -p "${MARKER%/*}"
++	touch "$MARKER"
++	;;
++esac
++
++exit 0
+diff --git a/target/linux/realtek/base-files/etc/uci-defaults/09_lg510s_mgmt b/target/linux/realtek/base-files/etc/uci-defaults/09_lg510s_mgmt
+new file mode 100644
+index 0000000..952ca50
+--- /dev/null
++++ b/target/linux/realtek/base-files/etc/uci-defaults/09_lg510s_mgmt
+@@ -0,0 +1,39 @@
++. /lib/functions.sh
++
++# Manage the switch over DHCP without IPv6, as stock switches do. Only OpenWrt's
++# untouched static default is converted, once; the marker survives sysupgrade.
++# /etc/udhcpc.user.d/lg510s-fallback adds 192.168.1.1/24 while no lease is held.
++MARKER=/etc/lg510s/mgmt-default
++
++case "$(board_name)" in
++lianguo,lg510s-4t2xs)
++	[ -f "$MARKER" ] && exit 0
++	mkdir -p "${MARKER%/*}"
++	touch "$MARKER"
++
++	# config_generate writes 192.168.1.1/24; older releases used ipaddr plus netmask
++	[ "$(uci -q get network.lan.proto)" = static ] || exit 0
++	case "$(uci -q get network.lan.ipaddr)" in 192.168.1.1|192.168.1.1/24) ;; *) exit 0 ;; esac
++	[ -z "$(uci -q get network.lan.gateway)" ] || exit 0
++
++	# retry: udhcpc only reports leasefail, which triggers the fallback, when retries are limited
++	uci -q batch <<-EOF
++		set network.lan.proto='dhcp'
++		set network.lan.retry='3'
++		delete network.lan.ipaddr
++		delete network.lan.netmask
++		delete network.lan.ip6assign
++		delete network.globals.ula_prefix
++	EOF
++
++	# ipv6 '0' is the device option behind LuCI's "Enable IPv6" checkbox. Only the lan
++	# device needs it: the bridge itself has no untagged VLAN, eth0 is the CPU conduit.
++	dev=$(uci -q get network.lan.device)
++	s=$(uci -q show network | sed -n "s/^network\.\([^.]*\)\.name='$dev'$/\1/p")
++	[ -n "$s" ] || { s=$(uci add network device); uci set network.$s.name="$dev"; }
++	uci set network.$s.ipv6='0'
++	uci commit network
++	;;
++esac
++
++exit 0
+diff --git a/target/linux/realtek/base-files/etc/udhcpc.user.d/lg510s-fallback b/target/linux/realtek/base-files/etc/udhcpc.user.d/lg510s-fallback
+new file mode 100644
+index 0000000..2f66ac2
+--- /dev/null
++++ b/target/linux/realtek/base-files/etc/udhcpc.user.d/lg510s-fallback
+@@ -0,0 +1,7 @@
++# Sourced by /lib/netifd/dhcp.script with the udhcpc event in $1.
++# While lan has no DHCP lease, give it 192.168.1.1/24; the next lease replaces it.
++[ "$(board_name)" = lianguo,lg510s-4t2xs ] && [ "$INTERFACE" = lan ] && [ "$1" = leasefail ] || exit 0
++
++proto_init_update "*" 1
++proto_add_ipv4_address 192.168.1.1 24
++proto_send_update "$INTERFACE"
+diff --git a/target/linux/realtek/base-files/lib/upgrade/keep.d/lg510s b/target/linux/realtek/base-files/lib/upgrade/keep.d/lg510s
+new file mode 100644
+index 0000000..73ae4e2
+--- /dev/null
++++ b/target/linux/realtek/base-files/lib/upgrade/keep.d/lg510s
+@@ -0,0 +1 @@
++/etc/lg510s/
+diff --git a/target/linux/realtek/dts/rtl9303_lianguo_lg510s-4t2xs.dts b/target/linux/realtek/dts/rtl9303_lianguo_lg510s-4t2xs.dts
+new file mode 100644
+index 0000000..f2b8a68
+--- /dev/null
++++ b/target/linux/realtek/dts/rtl9303_lianguo_lg510s-4t2xs.dts
+@@ -0,0 +1,256 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++/*
++ * Lianguo LG510S-4T2XS (also sold as Horaco ZX510S-4T2XS):
++ * RTL9303, one RTL8264B quad 10G PHY, two SFP+ cages, 128 MiB RAM, 16 MiB SPI NOR.
++ */
++/dts-v1/;
++
++#include "rtl930x.dtsi"
++
++#include <dt-bindings/input/input.h>
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/leds/common.h>
++
++/ {
++	compatible = "lianguo,lg510s-4t2xs", "realtek,rtl9303-soc";
++	model = "Lianguo LG510S-4T2XS";
++
++	memory@0 {
++		device_type = "memory";
++		reg = <0x0 0x8000000>;
++	};
++
++	chosen {
++		stdout-path = "serial0:115200n8";
++	};
++
++	aliases {
++		label-mac-device = &ethernet0;
++		led-boot = &led_sys;
++		led-failsafe = &led_sys;
++		led-running = &led_sys;
++		led-upgrade = &led_sys;
++	};
++
++	/* SYS LED; stock blinks it in hardware until boot completes */
++	leds {
++		compatible = "gpio-leds";
++		pinctrl-names = "default";
++		pinctrl-0 = <&pinmux_disable_sys_led>;
++
++		led_sys: led-0 {
++			gpios = <&gpio0 0 GPIO_ACTIVE_HIGH>;
++			color = <LED_COLOR_ID_GREEN>;
++			function = LED_FUNCTION_STATUS;
++		};
++	};
++
++	keys {
++		compatible = "gpio-keys";
++
++		button-reset {
++			label = "reset";
++			gpios = <&gpio0 5 GPIO_ACTIVE_LOW>;
++			linux,code = <KEY_RESTART>;
++		};
++	};
++
++	/*
++	 * Stock LED setup, as programmed by U-Boot "rtk network on" and the
++	 * vendor ledConf: serial LED chain, three LEDs per port (LED2 unused),
++	 * LED1 = 10G, LED0 = lower speeds; set 1 serves the SFP+ ports.
++	 */
++	led_set {
++		compatible = "realtek,rtl9300-leds";
++		active-low;
++		realtek,led-mode = <RTL93XX_LED_MODE_SERIAL>;
++
++		led_set0 = <
++			(RTL93XX_LED_SET_NONE)
++			(RTL93XX_LED_SET_10G | RTL93XX_LED_SET_LINK | RTL93XX_LED_SET_ACT)
++			(RTL93XX_LED_SET_5G | RTL93XX_LED_SET_2P5G | RTL93XX_LED_SET_1G |
++			 RTL93XX_LED_SET_100M | RTL93XX_LED_SET_LINK | RTL93XX_LED_SET_ACT)
++		>;
++
++		led_set1 = <
++			(RTL93XX_LED_SET_NONE)
++			(RTL93XX_LED_SET_10G | RTL93XX_LED_SET_LINK | RTL93XX_LED_SET_ACT)
++			(RTL93XX_LED_SET_2P5G | RTL93XX_LED_SET_1G | RTL93XX_LED_SET_100M |
++			 RTL93XX_LED_SET_LINK | RTL93XX_LED_SET_ACT)
++		>;
++
++		/* stock keeps the unpopulated port 24 in the serial LED chain */
++		realtek,led-set0-force-port-mask = <0x01000000>;
++	};
++
++	/* Front-panel port 5 */
++	sfp0: sfp-p5 {
++		compatible = "sff,sfp";
++		i2c-bus = <&i2c_sfp0>;
++		mod-def0-gpio = <&gpio0 14 GPIO_ACTIVE_LOW>;
++		los-gpio = <&gpio0 13 GPIO_ACTIVE_HIGH>;
++		tx-disable-gpio = <&gpio0 15 GPIO_ACTIVE_HIGH>;
++		maximum-power-milliwatt = <2000>;
++	};
++
++	/* Front-panel port 6; GPIO 18 shares its pin with the USB LED */
++	sfp1: sfp-p6 {
++		compatible = "sff,sfp";
++		pinctrl-names = "default";
++		pinctrl-0 = <&pinmux_disable_usb_led>;
++		i2c-bus = <&i2c_sfp1>;
++		mod-def0-gpio = <&gpio0 17 GPIO_ACTIVE_LOW>;
++		los-gpio = <&gpio0 16 GPIO_ACTIVE_HIGH>;
++		tx-disable-gpio = <&gpio0 18 GPIO_ACTIVE_HIGH>;
++		maximum-power-milliwatt = <2000>;
++	};
++};
++
++/* SCL on GPIO 8; SDA 0/1 on GPIO 9/10 */
++&i2c_mst1 {
++	status = "okay";
++
++	i2c_sfp0: i2c@0 { reg = <0>; };
++	i2c_sfp1: i2c@1 { reg = <1>; };
++};
++
++&spi0 {
++	status = "okay";
++
++	flash@0 {
++		compatible = "jedec,spi-nor";
++		reg = <0>;
++		spi-max-frequency = <10000000>;
++
++		/* Stock layout; only the runtime image ("firmware") is writable. */
++		partitions {
++			compatible = "fixed-partitions";
++			#address-cells = <1>;
++			#size-cells = <1>;
++
++			partition@0 {
++				label = "loader";
++				reg = <0x0 0xe0000>;
++				read-only;
++			};
++
++			partition@e0000 {
++				label = "bdinfo";
++				reg = <0xe0000 0x10000>;
++				read-only;
++
++				nvmem-layout {
++					compatible = "u-boot,env";
++
++					macaddr_ubootenv_ethaddr: ethaddr {
++						#nvmem-cell-cells = <1>;
++					};
++				};
++			};
++
++			partition@f0000 {
++				label = "sysinfo";
++				reg = <0xf0000 0x10000>;
++				read-only;
++			};
++
++			partition@100000 {
++				label = "jffs2-cfg";
++				reg = <0x100000 0x100000>;
++				read-only;
++			};
++
++			partition@200000 {
++				label = "jffs2-log";
++				reg = <0x200000 0x100000>;
++				read-only;
++			};
++
++			partition@300000 {
++				label = "firmware";
++				reg = <0x300000 0xc00000>;
++				compatible = "openwrt,uimage", "denx,uimage";
++				openwrt,ih-magic = <0x83800000>;
++			};
++
++			partition@f00000 {
++				label = "oeminfo";
++				reg = <0xf00000 0x100000>;
++				read-only;
++			};
++		};
++	};
++};
++
++&mdio_bus0 {
++	phy0: ethernet-phy@0 {
++		reg = <0>;
++		compatible = "ethernet-phy-ieee802.3-c45";
++	};
++
++	phy8: ethernet-phy@1 {
++		reg = <1>;
++		compatible = "ethernet-phy-ieee802.3-c45";
++	};
++
++	phy16: ethernet-phy@2 {
++		reg = <2>;
++		compatible = "ethernet-phy-ieee802.3-c45";
++	};
++
++	phy20: ethernet-phy@3 {
++		reg = <3>;
++		compatible = "ethernet-phy-ieee802.3-c45";
++	};
++};
++
++&ethernet0 {
++	nvmem-cells = <&macaddr_ubootenv_ethaddr 0>;
++	nvmem-cell-names = "mac-address";
++};
++
++&switch0 {
++	ethernet-ports {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		/* RJ45 ports, lan1-4 */
++		SWITCH_PORT_SDS(0, 1, 2, 0, usxgmii)
++		SWITCH_PORT_SDS(8, 2, 3, 0, usxgmii)
++		SWITCH_PORT_SDS(16, 3, 4, 0, usxgmii)
++		SWITCH_PORT_SDS(20, 4, 5, 0, usxgmii)
++
++		/* SFP+ ports, lan5-6 */
++		port25: port@25 {
++			reg = <25>;
++			label = "lan5";
++			pcs-handle = <&serdes7 0>;
++			phy-mode = "1000base-x";
++			sfp = <&sfp0>;
++			managed = "in-band-status";
++			led-set = <1>;
++		};
++
++		port26: port@26 {
++			reg = <26>;
++			label = "lan6";
++			pcs-handle = <&serdes8 0>;
++			phy-mode = "1000base-x";
++			sfp = <&sfp1>;
++			managed = "in-band-status";
++			led-set = <1>;
++		};
++
++		/* CPU port */
++		port@28 {
++			ethernet = <&ethernet0>;
++			reg = <28>;
++			phy-mode = "internal";
++
++			fixed-link {
++				speed = <1000>;
++				full-duplex;
++			};
++		};
++	};
++};
+diff --git a/target/linux/realtek/image/rtl930x.mk b/target/linux/realtek/image/rtl930x.mk
+index dd86ade..7735da4 100644
+--- a/target/linux/realtek/image/rtl930x.mk
++++ b/target/linux/realtek/image/rtl930x.mk
+@@ -198,6 +198,24 @@ define Device/keeplink_kp-9000-8xm
+ endef
+ TARGET_DEVICES += keeplink_kp-9000-8xm
+ 
++define Device/lianguo_lg510s-4t2xs
++  SOC := rtl9303
++  UIMAGE_MAGIC := 0x83800000
++  DEVICE_VENDOR := Lianguo
++  DEVICE_MODEL := LG510S-4T2XS
++  DEVICE_PACKAGES := kmod-phy-realtek rtl826x-firmware
++  IMAGE_SIZE := 12288k
++  $(Device/kernel-lzma)
++  IMAGES += factory.bix
++  IMAGE/factory.bix := \
++	append-kernel | \
++	pad-to 64k | \
++	append-rootfs | \
++	pad-rootfs | \
++	check-size
++endef
++TARGET_DEVICES += lianguo_lg510s-4t2xs
++
+ define Device/lianguo_lg-swtgw3c8f
+   SOC := rtl9303
+   UIMAGE_MAGIC := 0x83800000
+-- 
+2.47.3
+

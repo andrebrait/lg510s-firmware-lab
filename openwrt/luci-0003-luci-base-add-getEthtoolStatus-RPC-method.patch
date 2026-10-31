@@ -1,0 +1,70 @@
+From f6d73e618187b517b6d4475b617e7cb0ac4394a7 Mon Sep 17 00:00:00 2001
+From: Andre Brait <andrebrait@gmail.com>
+Date: Sat, 31 Oct 2026 04:39:05 +0000
+Subject: [PATCH 3/5] luci-base: add getEthtoolStatus RPC method
+
+Return the ethtool JSON link, pause and EEE state of the requested
+network devices, so views can show what a port advertises, what its link
+partner advertises and what was negotiated. Device names are validated
+before ethtool runs.
+
+Signed-off-by: Andre Brait <andrebrait@gmail.com>
+---
+ .../luci-base/root/usr/share/rpcd/ucode/luci  | 40 +++++++++++++++++++
+ 1 file changed, 40 insertions(+)
+
+diff --git a/modules/luci-base/root/usr/share/rpcd/ucode/luci b/modules/luci-base/root/usr/share/rpcd/ucode/luci
+index 73ed50d..5ff679d 100644
+--- a/modules/luci-base/root/usr/share/rpcd/ucode/luci
++++ b/modules/luci-base/root/usr/share/rpcd/ucode/luci
+@@ -745,6 +745,46 @@ const methods = {
+ 		}
+ 	},
+ 
++	getEthtoolStatus: {
++		args: { devices: [] },
++		call: function(request) {
++			const query = (opts, dev) => {
++				const fd = popen(`ethtool --json ${opts} ${shellquote(dev)} 2>/dev/null`);
++
++				if (!fd)
++					return null;
++
++				const out = fd.read('all');
++
++				/* ethtool prints [ {} ] for an unsupported query; only its exit status tells */
++				if (fd.close() != 0)
++					return null;
++
++				try {
++					return json(out)?.[0];
++				}
++				catch (e) {
++					return null;
++				}
++			};
++
++			const result = {};
++
++			for (let dev in request.args.devices) {
++				if (type(dev) != 'string' || !match(dev, /^[^-.\/][^\/]*$/) || !access(`/sys/class/net/${dev}`))
++					continue;
++
++				result[dev] = {
++					link: query('', dev),
++					pause: query('-a', dev),
++					eee: query('--show-eee', dev)
++				};
++			}
++
++			return { result };
++		}
++	},
++
+ 	getOdhcp6cStats: {
+ 		call: function() {
+ 			const ubus = connect();
+-- 
+2.47.3
+
+

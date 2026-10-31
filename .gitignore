@@ -1,0 +1,25 @@
+# Firmware/configuration/session material stays outside version control.
+raw/
+extracted/
+artifacts/
+snapshots/
+scratch/
+*.bin
+*.img
+*.cpio
+*.pcap
+*.pcapng
+*.cfg
+*.conf
+*.json
+*.pem
+*.key
+*.log
+.env*
+*cookie*
+*private_key*
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
