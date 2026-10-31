@@ -1,40 +1,52 @@
-From 5316a128394b58ea69201b9d868be337ba55d37d Mon Sep 17 00:00:00 2001
+From 55387b430017eaca34cd97bfe33dbfa5506a58df Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
-Date: Sat, 31 Oct 2026 11:15:30 +0000
-Subject: [PATCH 2/2] switchdev-config: add package
+Date: Sat, 31 Oct 2026 11:48:20 +0000
+Subject: [PATCH] switchdev-config: add new package
 
 Add a small service that applies hardware switch features from
-/etc/config/switchdev: static FDB entries through bridge, port mirroring
-through tc matchall/mirred, ingress rate limits through tc flower police
-and egress rate limits through a TBF root qdisc. Rules are added with
-skip_sw, so a setting the switch cannot offload is logged and not
-silently run on the CPU.
+/etc/config/switchdev to DSA/switchdev ports:
 
-Tested on a Realtek RTL9303 (rtl83xx DSA): all four rule types are
-reported as offloaded, and stopping the service removes them.
+- static FDB entries, through bridge
+- port mirroring, through tc matchall with mirred
+- ingress rate limits, through tc flower with police
+- egress rate limits, through a TBF root qdisc
 
+Rules are added with skip_sw, so a setting the switch cannot offload is
+logged and not run by the CPU. Stopping or reloading the service removes
+what it added.
+
+Tested on a Lianguo LG510S-4T2XS (Realtek RTL9303, rtl83xx DSA): all
+four rule types are reported as offloaded, and a rule with an invalid
+target is logged and skipped.
+
+Assisted-by: Claude:claude-opus-5-5
 Signed-off-by: Andre Brait <andrebrait@gmail.com>
 ---
- .../network/config/switchdev-config/Makefile  |  37 ++++++
- .../switchdev-config/files/switchdev.config   |  19 +++
- .../switchdev-config/files/switchdev.init     | 112 ++++++++++++++++++
- 3 files changed, 168 insertions(+)
- create mode 100644 package/network/config/switchdev-config/Makefile
- create mode 100644 package/network/config/switchdev-config/files/switchdev.config
- create mode 100755 package/network/config/switchdev-config/files/switchdev.init
+ net/switchdev-config/Makefile               |  44 ++++++++
+ net/switchdev-config/files/switchdev.config |  19 ++++
+ net/switchdev-config/files/switchdev.init   | 114 ++++++++++++++++++++
+ 3 files changed, 177 insertions(+)
+ create mode 100644 net/switchdev-config/Makefile
+ create mode 100644 net/switchdev-config/files/switchdev.config
+ create mode 100755 net/switchdev-config/files/switchdev.init
 
-diff --git a/package/network/config/switchdev-config/Makefile b/package/network/config/switchdev-config/Makefile
+diff --git a/net/switchdev-config/Makefile b/net/switchdev-config/Makefile
 new file mode 100644
-index 0000000..1601804
+index 0000000..37148e7
 --- /dev/null
-+++ b/package/network/config/switchdev-config/Makefile
-@@ -0,0 +1,37 @@
++++ b/net/switchdev-config/Makefile
+@@ -0,0 +1,44 @@
++# SPDX-License-Identifier: GPL-2.0-only
++
 +include $(TOPDIR)/rules.mk
 +
 +PKG_NAME:=switchdev-config
++PKG_VERSION:=1.0
 +PKG_RELEASE:=1
-+PKG_LICENSE:=GPL-2.0-only
++
 +PKG_MAINTAINER:=Andre Brait <andrebrait@gmail.com>
++PKG_LICENSE:=GPL-2.0-only
++PKG_LICENSE_FILES:=
 +
 +include $(INCLUDE_DIR)/package.mk
 +
@@ -49,7 +61,8 @@ index 0000000..1601804
 +define Package/switchdev-config/description
 +  Applies static FDB entries, port mirroring and per-port rate limits from
 +  /etc/config/switchdev to switchdev ports, using bridge and tc rules that
-+  the switch offloads.
++  the switch offloads. Rules are added with skip_sw, so a setting the
++  switch cannot offload is logged instead of being run by the CPU.
 +endef
 +
 +define Package/switchdev-config/conffiles
@@ -60,17 +73,18 @@ index 0000000..1601804
 +endef
 +
 +define Package/switchdev-config/install
-+	$(INSTALL_DIR) $(1)/etc/config $(1)/etc/init.d
++	$(INSTALL_DIR) $(1)/etc/config
 +	$(INSTALL_CONF) ./files/switchdev.config $(1)/etc/config/switchdev
++	$(INSTALL_DIR) $(1)/etc/init.d
 +	$(INSTALL_BIN) ./files/switchdev.init $(1)/etc/init.d/switchdev
 +endef
 +
 +$(eval $(call BuildPackage,switchdev-config))
-diff --git a/package/network/config/switchdev-config/files/switchdev.config b/package/network/config/switchdev-config/files/switchdev.config
+diff --git a/net/switchdev-config/files/switchdev.config b/net/switchdev-config/files/switchdev.config
 new file mode 100644
 index 0000000..d2d3041
 --- /dev/null
-+++ b/package/network/config/switchdev-config/files/switchdev.config
++++ b/net/switchdev-config/files/switchdev.config
 @@ -0,0 +1,19 @@
 +# Hardware switch features applied by /etc/init.d/switchdev.
 +#
@@ -91,13 +105,14 @@ index 0000000..d2d3041
 +#	option ingress '100'	# Mbit/s, empty for no limit
 +#	option egress '100'	# Mbit/s, empty for no limit
 +#	option burst '32k'	# bytes, tc size syntax
-diff --git a/package/network/config/switchdev-config/files/switchdev.init b/package/network/config/switchdev-config/files/switchdev.init
+diff --git a/net/switchdev-config/files/switchdev.init b/net/switchdev-config/files/switchdev.init
 new file mode 100755
-index 0000000..f2b2cb1
+index 0000000..fe95340
 --- /dev/null
-+++ b/package/network/config/switchdev-config/files/switchdev.init
-@@ -0,0 +1,112 @@
++++ b/net/switchdev-config/files/switchdev.init
+@@ -0,0 +1,114 @@
 +#!/bin/sh /etc/rc.common
++# SPDX-License-Identifier: GPL-2.0-only
 +# Apply /etc/config/switchdev: port mirroring and rate limits through tc,
 +# static FDB entries through bridge. Rules use skip_sw, so a setting the
 +# switch cannot offload fails instead of falling back to the CPU.
@@ -112,8 +127,9 @@ index 0000000..f2b2cb1
 +}
 +
 +run() {
-+	"$@" 2>/tmp/switchdev.err || log "failed: $* ($(cat /tmp/switchdev.err))"
-+	rm -f /tmp/switchdev.err
++	local err
++
++	err=$("$@" 2>&1 >/dev/null) || log "failed: $* ($err)"
 +}
 +
 +clear_state() {
@@ -210,5 +226,5 @@ index 0000000..f2b2cb1
 +	procd_add_raw_trigger "interface.*.up" 2000 /etc/init.d/switchdev reload
 +}
 -- 
-2.47.3
+2.56.0
 
