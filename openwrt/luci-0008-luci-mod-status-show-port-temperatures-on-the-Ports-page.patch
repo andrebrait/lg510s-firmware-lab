@@ -1,0 +1,80 @@
+From 7b1cc1d4b1dd3df5cf26323f42fa866e090f71d2 Mon Sep 17 00:00:00 2001
+From: Andre Brait <andrebrait@gmail.com>
+Date: Sat, 31 Oct 2026 19:16:39 +0000
+Subject: [PATCH] luci-mod-status: show port temperatures on the Ports page
+
+Add a temperature to getEthtoolStatus: the hwmon sensor of the port PHY,
+found through the phydev link or, for DSA ports, the device tree
+phy-handle, else the current temperature from the SFP module
+diagnostics. Show it in the Link group of each port.
+
+Assisted-by: Claude:claude-opus-5-5
+Signed-off-by: Andre Brait <andrebrait@gmail.com>
+---
+ .../luci-base/root/usr/share/rpcd/ucode/luci  | 28 ++++++++++++++++++-
+ .../resources/view/status/ports.js            |  3 +-
+ 2 files changed, 29 insertions(+), 2 deletions(-)
+
+diff --git a/modules/luci-base/root/usr/share/rpcd/ucode/luci b/modules/luci-base/root/usr/share/rpcd/ucode/luci
+index 5ff679d..50a0651 100644
+--- a/modules/luci-base/root/usr/share/rpcd/ucode/luci
++++ b/modules/luci-base/root/usr/share/rpcd/ucode/luci
+@@ -768,6 +768,31 @@ const methods = {
+ 				}
+ 			};
+ 
++			/* PHY sensor of a copper port, else the diagnostics of an SFP module */
++			const temperature = (dev) => {
++				let phy = `/sys/class/net/${dev}/phydev`;
++
++				/* DSA ports have no phydev link; find the PHY by its device tree handle */
++				if (!access(phy)) {
++					const handle = readfile(`/sys/class/net/${dev}/of_node/phy-handle`);
++
++					phy = null;
++
++					for (let p in (handle ? glob('/sys/bus/mdio_bus/devices/*/of_node/phandle') : []))
++						if (readfile(p) == handle)
++							phy = dirname(dirname(p));
++				}
++
++				for (let f in (phy ? glob(`${phy}/hwmon/hwmon*/temp1_input`) : [])) {
++					const t = trim(readfile(f) ?? '');
++
++					if (length(t))
++						return +t / 1000;
++				}
++
++				return query('-m', dev)?.module_temperature_measurement;
++			};
++
+ 			const result = {};
+ 
+ 			for (let dev in request.args.devices) {
+@@ -777,7 +802,8 @@ const methods = {
+ 				result[dev] = {
+ 					link: query('', dev),
+ 					pause: query('-a', dev),
+-					eee: query('--show-eee', dev)
++					eee: query('--show-eee', dev),
++					temperature: temperature(dev)
+ 				};
+ 			}
+ 
+diff --git a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
+index 74bc34d..60932dd 100644
+--- a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
++++ b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
+@@ -71,7 +71,8 @@ function renderPort(name, st) {
+ 		[ _('Port type'), link.port ?? '-' ],
+ 		[ _('Auto negotiation'), (link['auto-negotiation'] == null) ? '-' : link['auto-negotiation'] ? _('On') : _('Off') ],
+ 		[ _('Supported'), formatModes(link['supported-link-modes']) ],
+-		[ _('Link partner'), up ? formatModes(link['link-partner-advertised-link-modes']) : '-' ]
++		[ _('Link partner'), up ? formatModes(link['link-partner-advertised-link-modes']) : '-' ],
++		[ _('Temperature'), (st?.temperature != null) ? '%.1f\u202f°C'.format(st.temperature) : '-' ]
+ 	]));
+ 
+ 	groups.push(...renderGroup(_('Flow control'), [
+-- 
+2.47.3
+

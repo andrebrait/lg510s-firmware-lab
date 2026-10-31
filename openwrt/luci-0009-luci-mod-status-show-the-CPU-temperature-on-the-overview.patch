@@ -1,0 +1,64 @@
+From da7265c72f68f94a8a6da7b37258ea1040168ea1 Mon Sep 17 00:00:00 2001
+From: Andre Brait <andrebrait@gmail.com>
+Date: Sat, 31 Oct 2026 19:16:39 +0000
+Subject: [PATCH] luci-mod-status: show the CPU temperature on the overview
+
+Read thermal_zone0 and add a CPU Temperature row to the System section
+when the device has a thermal sensor.
+
+Assisted-by: Claude:claude-opus-5-5
+Signed-off-by: Andre Brait <andrebrait@gmail.com>
+---
+ .../resources/view/status/include/10_system.js           | 9 +++++++--
+ .../root/usr/share/rpcd/acl.d/luci-mod-status-index.json | 1 +
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
+index 3a2d2f1..e25bf33 100644
+--- a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
++++ b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
+@@ -34,7 +34,8 @@ return baseclass.extend({
+ 			L.resolveDefault(callSystemInfo(), {}),
+ 			L.resolveDefault(callLuciVersion(), { revision: _('unknown version'), branch: 'LuCI' }),
+ 			L.resolveDefault(callGetUnixtime(), 0),
+-			uci.load('system')
++			uci.load('system'),
++			L.resolveDefault(fs.trimmed('/sys/class/thermal/thermal_zone0/temp'), '')
+ 		]);
+ 	},
+ 
+@@ -42,7 +43,8 @@ return baseclass.extend({
+ 		var boardinfo   = data[0],
+ 		    systeminfo  = data[1],
+ 		    luciversion = data[2],
+-		    unixtime    = data[3];
++		    unixtime    = data[3],
++		    temperature = data[5];
+ 
+ 		luciversion = luciversion.branch + ' ' + luciversion.revision;
+ 
+@@ -78,6 +80,9 @@ return baseclass.extend({
+ 			) : null
+ 		];
+ 
++		if (temperature)
++			fields.push(_('CPU Temperature'), '%.1f\u202f°C'.format(+temperature / 1000));
++
+ 		var table = E('table', { 'class': 'table' });
+ 
+ 		for (var i = 0; i < fields.length; i += 2) {
+diff --git a/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status-index.json b/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status-index.json
+index b3f2cef..ebfdbb8 100644
+--- a/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status-index.json
++++ b/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status-index.json
+@@ -6,6 +6,7 @@
+ 				"/etc/board.json": [ "read" ],
+ 				"/proc/sys/net/netfilter/nf_conntrack_count": [ "read" ],
+ 				"/proc/sys/net/netfilter/nf_conntrack_max": [ "read" ],
++				"/sys/class/thermal/thermal_zone0/temp": [ "read" ],
+ 				"/www/luci-static/resources/view/status/include": [ "list" ]
+ 			},
+ 			"ubus": {
+-- 
+2.47.3
+

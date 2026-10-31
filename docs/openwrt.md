@@ -37,16 +37,16 @@ The board definition is [`openwrt/0001-realtek-rtl930x-add-Lianguo-LG510S-4T2XS.
 
 ## Building
 
-Build on the analysis VM in a dedicated OpenWrt worktree at `19483fa9075686e7a627c777e09c0a24163c8323`, as the non-root build user. LuCI needs the `luci` feed and `cgi-io` from the `packages` feed; the image was built with `luci` at `c1b79e84ba2b51b8df3ceb0dad1798f15c12a6dc` and `packages` at `76bf8b232b20a0e66870096d21203d666afbee46`. The seven `openwrt/luci-*.patch` files go on top of `feeds/luci` with `git am`. They add EEE and flow-control advertisement choices to Network -> Interfaces -> Devices -> Configure; a `luci.getEthtoolStatus` RPC method that returns ethtool's link, pause and EEE state; Flow Control and EEE columns with the negotiated state next to Link Speed in the Devices tab, with the advertisements in tooltips; and a read-only Status -> Ports page with one card per port showing link details and what flow control and EEE this switch and the link partner advertise, and the result. Stock LuCI can set neither netifd's `eee` nor its `pause` option and shows no negotiation state.
+Build on the analysis VM in a dedicated OpenWrt worktree at `19483fa9075686e7a627c777e09c0a24163c8323`, as the non-root build user. LuCI needs the `luci` feed and `cgi-io` from the `packages` feed; the image was built with `luci` at `c1b79e84ba2b51b8df3ceb0dad1798f15c12a6dc` and `packages` at `76bf8b232b20a0e66870096d21203d666afbee46`. The nine `openwrt/luci-*.patch` files go on top of `feeds/luci` with `git am`. They add EEE and flow-control advertisement choices to Network -> Interfaces -> Devices -> Configure; a `luci.getEthtoolStatus` RPC method that returns ethtool's link, pause and EEE state; Flow Control and EEE columns with the negotiated state next to Link Speed in the Devices tab, with the advertisements in tooltips; and a read-only Status -> Ports page with one card per port showing link details and what flow control and EEE this switch and the link partner advertise, and the result. Stock LuCI can set neither netifd's `eee` nor its `pause` option and shows no negotiation state.
 
 ```sh
 git am 0001-realtek-rtl930x-add-Lianguo-LG510S-4T2XS.patch
 printf 'src-git packages https://git.openwrt.org/feed/packages.git\nsrc-git luci https://git.openwrt.org/project/luci.git\n' > feeds.conf
 ./scripts/feeds update packages luci
-git -C feeds/luci am ../../luci-000*.patch  # seven patches
+git -C feeds/luci am ../../luci-000*.patch  # nine patches
 git am ../0002-switchdev-config-add-package.patch
 ./scripts/feeds install -p luci luci
-./scripts/feeds install cgi-io luci-app-lldpd net-snmp luci-app-snmpd luci-ssl luci-app-switchdev
+./scripts/feeds install cgi-io luci-app-lldpd net-snmp luci-app-snmpd luci-ssl luci-app-switchdev luci-app-statistics collectd-mod-thermal collectd-mod-sensors
 cat > .config <<'EOF'
 CONFIG_TARGET_realtek=y
 CONFIG_TARGET_realtek_rtl930x=y
@@ -63,6 +63,9 @@ CONFIG_PACKAGE_luci-app-snmpd=y
 CONFIG_PACKAGE_luci-ssl=y
 CONFIG_PACKAGE_kmod-bonding=y
 CONFIG_PACKAGE_luci-app-switchdev=y
+CONFIG_PACKAGE_luci-app-statistics=y
+CONFIG_PACKAGE_collectd-mod-thermal=y
+CONFIG_PACKAGE_collectd-mod-sensors=y
 EOF
 make defconfig
 make -j"$(nproc)"
@@ -116,6 +119,7 @@ Stock U-Boot needs no change: its default `bootcmd=boota` loads OpenWrt. Putting
 - **HTTPS.** LuCI redirects HTTP to HTTPS by default (`uhttpd.main.redirect_https '1'`), set once by `/etc/uci-defaults/08_lg510s_https` with the marker `/etc/lg510s/https-redirect-default`, so turning the redirect off survives updates. The certificate is self-signed and generated on first boot; browsers warn until it is accepted or replaced.
 - **Management address.** `/etc/uci-defaults/09_lg510s_mgmt` turns OpenWrt's untouched static default into a DHCP client (`proto 'dhcp'`, `retry '3'`), drops `ip6assign` and the ULA prefix, and sets `ipv6 '0'` on the `lan` device (`switch.1`), the option behind LuCI's Enable IPv6 checkbox. It runs once (marker `/etc/lg510s/mgmt-default`) and leaves any other configuration alone. While `lan` holds no lease, `/etc/udhcpc.user.d/lg510s-fallback` gives it `192.168.1.1/24` through netifd on each `leasefail`, so the lan firewall zone applies; a later lease replaces it. `retry` matters: with OpenWrt's default `-t 0` udhcpc retries forever and never reports `leasefail`. The bridge itself carries VLAN 1 tagged only and `eth0` is the CPU conduit, so neither needs IPv6 turned off. The fallback was tested on a throwaway interface; the full first boot is not yet tested. If the network already uses `192.168.1.1` and its DHCP server is down, the fallback address conflicts with it.
 - **Network reload.** On 2026-10-31, setting `ipv6 '0'` on the `eth0`, `switch` and `switch.1` device sections and running `/etc/init.d/network reload` made the switch unreachable; the reload that restored the old configuration did not bring it back, and only a power cycle did. The cause is not known; LuCI's Save & Apply on device settings may trigger the same reload.
+- **Temperatures.** The SoC sensor (`thermal_zone0`, `cpu-thermal`) and the four RTL8264B PHY sensors (hwmon, one per copper port) are read by two LuCI patches: Status -> Overview shows the CPU temperature, and Status -> Ports shows each port's temperature. A DSA port has no `phydev` link in sysfs, so the RPC finds its PHY through the device tree `phy-handle`. SFP+ ports show the module's own temperature (`ethtool -m`, `module_temperature_measurement`) when the module has diagnostics; the passive DAC used in testing has none. `luci-app-statistics` with the thermal and sensors plugins graphs them under Statistics -> Graphs; `/etc/uci-defaults/10_lg510s_statistics` enables both plugins once. The graph history is kept in RAM and starts over after a reboot.
 - **Switch features.** `switchdev-config` adds its rules with `skip_sw`: a rule the switch cannot offload fails and is logged (`logread | grep switchdev`) instead of running on the CPU. Ingress limits need `kmod-sched-flower` and `kmod-sched-act-police`, which the package pulls in. `tc -j` does not report a police rate, so the Rate limiting page shows the configured incoming limit next to the hardware state.
 
 ## Fan
