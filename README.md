@@ -130,7 +130,7 @@ The [known issues](docs/openwrt.md#known-issues-and-cautions) include a bridging
 
 ## Upstream
 
-The board support, the `switchdev-config` package and the LuCI changes are being prepared for upstream OpenWrt, LuCI and the packages feed. Until they are merged, use the patches in [`openwrt/`](openwrt/). The branches and submission steps are in [Upstreaming](docs/upstreaming.md).
+The board support, the `switchdev-config` package and the LuCI changes are submitted upstream: openwrt/openwrt#26346 (board), openwrt/packages#31070 (`switchdev-config`), openwrt/luci#9177 (EEE, pause and STP options), openwrt/luci#9178 (flow control and EEE state) and openwrt/luci#9179 (`luci-app-switchdev`, draft until the package is merged). Until they are merged, use the patches in [`openwrt/`](openwrt/). The branches and submission steps are in [Upstreaming](docs/upstreaming.md).
 
 ## Repository layout
 
