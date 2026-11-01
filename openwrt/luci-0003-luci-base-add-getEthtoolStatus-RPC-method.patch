@@ -1,7 +1,7 @@
 From f6d73e618187b517b6d4475b617e7cb0ac4394a7 Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
 Date: Sat, 31 Oct 2026 04:39:05 +0000
-Subject: [PATCH 3/5] luci-base: add getEthtoolStatus RPC method
+Subject: [PATCH 3/9] luci-base: add getEthtoolStatus RPC method
 
 Return the ethtool JSON link, pause and EEE state of the requested
 network devices, so views can show what a port advertises, what its link
@@ -66,5 +66,4 @@ index 73ed50d..5ff679d 100644
  			const ubus = connect();
 -- 
 2.47.3
-
 

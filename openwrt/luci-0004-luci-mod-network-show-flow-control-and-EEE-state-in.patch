@@ -1,7 +1,7 @@
 From 56dc937e5e3219e58d1d12a860f92008d5f08b74 Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
 Date: Sat, 31 Oct 2026 04:39:05 +0000
-Subject: [PATCH 4/5] luci-mod-network: show flow control and EEE state in
+Subject: [PATCH 4/9] luci-mod-network: show flow control and EEE state in
  Devices tab
 
 Add Flow Control and EEE columns next to Link Speed with the current,
@@ -120,5 +120,4 @@ index 3bcec4a..132352d 100644
  			"uci": [ "dhcp", "firewall", "luci", "network", "wireless", "system" ]
 -- 
 2.47.3
-
 

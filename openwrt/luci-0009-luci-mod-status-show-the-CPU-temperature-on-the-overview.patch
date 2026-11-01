@@ -1,7 +1,7 @@
-From 1a969ee6adb1e8b70d5cdda9e6c74d4eab6f21b7 Mon Sep 17 00:00:00 2001
+From 465c3f9a79bc21910a4b01a60e66144d8d5e7b10 Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
 Date: Sat, 31 Oct 2026 19:16:39 +0000
-Subject: [PATCH] luci-mod-status: show the CPU temperature on the overview
+Subject: [PATCH 9/9] luci-mod-status: show the CPU temperature on the overview
 
 Read thermal_zone0 and add a CPU Temperature row to the System section
 when the device has a thermal sensor. The ACL names the resolved sysfs

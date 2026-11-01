@@ -1,7 +1,7 @@
-From 26f550967eb2fe36fc850560cad9a509f14f30fc Mon Sep 17 00:00:00 2001
+From 708218b181e3da03ffc49a33c1337a7c6654851e Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
 Date: Sat, 31 Oct 2026 11:15:30 +0000
-Subject: [PATCH] luci-app-switchdev: add application
+Subject: [PATCH 7/9] luci-app-switchdev: add application
 
 Add LuCI pages for the switchdev-config service under Network -> Switch
 features: the switch hardware MAC address table with static entries,

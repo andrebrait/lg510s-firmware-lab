@@ -1,7 +1,7 @@
-From 7b1cc1d4b1dd3df5cf26323f42fa866e090f71d2 Mon Sep 17 00:00:00 2001
+From 46efc8f5210ede0aef8c63091fc930ced80cada7 Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
 Date: Sat, 31 Oct 2026 19:16:39 +0000
-Subject: [PATCH] luci-mod-status: show port temperatures on the Ports page
+Subject: [PATCH 8/9] luci-mod-status: show port temperatures on the Ports page
 
 Add a temperature to getEthtoolStatus: the hwmon sensor of the port PHY,
 found through the phydev link or, for DSA ports, the device tree
@@ -62,10 +62,10 @@ index 5ff679d..50a0651 100644
  			}
  
 diff --git a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
-index 74bc34d..60932dd 100644
+index 4a193d0..869f738 100644
 --- a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
 +++ b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
-@@ -71,7 +71,8 @@ function renderPort(name, st) {
+@@ -73,7 +73,8 @@ function renderPort(name, st) {
  		[ _('Port type'), link.port ?? '-' ],
  		[ _('Auto negotiation'), (link['auto-negotiation'] == null) ? '-' : link['auto-negotiation'] ? _('On') : _('Off') ],
  		[ _('Supported'), formatModes(link['supported-link-modes']) ],

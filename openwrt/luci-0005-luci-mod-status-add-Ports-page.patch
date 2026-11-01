@@ -1,7 +1,7 @@
-From f6201ae15deae22be7c29b5a07ff88f8583e3162 Mon Sep 17 00:00:00 2001
+From da0058804a13f13ac078eb172e57b9105a5e8a02 Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
 Date: Sat, 31 Oct 2026 04:39:05 +0000
-Subject: [PATCH 5/5] luci-mod-status: add Ports page
+Subject: [PATCH 5/9] luci-mod-status: add Ports page
 
 Add a read-only Status -> Ports page with one card per built-in Ethernet
 port: link speed, duplex, port type and autonegotiation, supported and
@@ -11,18 +11,18 @@ refreshes every five seconds.
 
 Signed-off-by: Andre Brait <andrebrait@gmail.com>
 ---
- .../resources/view/status/ports.js            | 133 ++++++++++++++++++
+ .../resources/view/status/ports.js            | 135 ++++++++++++++++++
  .../share/luci/menu.d/luci-mod-status.json    |  13 ++
  .../usr/share/rpcd/acl.d/luci-mod-status.json |   9 ++
- 3 files changed, 155 insertions(+)
+ 3 files changed, 157 insertions(+)
  create mode 100644 modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
 
 diff --git a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
 new file mode 100644
-index 0000000..74bc34d
+index 0000000..4a193d0
 --- /dev/null
 +++ b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,135 @@
 +'use strict';
 +'require dom';
 +'require rpc';
@@ -86,13 +86,15 @@ index 0000000..74bc34d
 +}
 +
 +function renderPort(name, st) {
++	/* without ethtool JSON output (needs ethtool-full) nothing is known about the port */
++	const known = !!st?.link;
 +	const link = st?.link ?? {};
 +	const up = !!link['link-detected'];
 +	const eee = st?.eee;
 +	const groups = [];
 +
 +	groups.push(...renderGroup(_('Link'), [
-+		[ _('Speed'), up ? '%s, %s'.format(formatSpeed(link.speed), link.duplex) : _('No link') ],
++		[ _('Speed'), !known ? '-' : up ? '%s, %s'.format(formatSpeed(link.speed), link.duplex) : _('No link') ],
 +		[ _('Port type'), link.port ?? '-' ],
 +		[ _('Auto negotiation'), (link['auto-negotiation'] == null) ? '-' : link['auto-negotiation'] ? _('On') : _('Off') ],
 +		[ _('Supported'), formatModes(link['supported-link-modes']) ],
@@ -110,14 +112,14 @@ index 0000000..74bc34d
 +		[ _('Link partner'), up ? formatModes(eee['link-partner-advertised-eee-link-modes']) : '-' ],
 +		[ _('Status'), formatEEEStatus(eee) ]
 +	] : [
-+		[ _('Status'), _('Not supported') ]
++		[ _('Status'), known ? _('Not supported') : '-' ]
 +	]));
 +
 +	return E('div', { 'class': 'ifacebox', 'style': 'margin:0;text-align:left' }, [
 +		E('div', { 'class': 'ifacebox-head', 'style': 'display:flex;align-items:center;gap:.5em;padding:.25em .5em' }, [
 +			E('img', { 'src': L.resource('icons/port_%s.svg').format(up ? 'up' : 'down'), 'style': 'width:28px' }),
 +			E('strong', {}, [ name ]),
-+			E('span', { 'style': 'margin-left:auto' }, [ up ? formatSpeed(link.speed) : _('no link') ])
++			E('span', { 'style': 'margin-left:auto' }, [ !known ? '-' : up ? formatSpeed(link.speed) : _('no link') ])
 +		]),
 +		E('div', { 'class': 'ifacebox-body', 'style': 'display:grid;grid-template-columns:auto 1fr;gap:.15em .75em;padding:0 .5em .5em;font-size:90%;text-align:left' }, groups)
 +	]);
