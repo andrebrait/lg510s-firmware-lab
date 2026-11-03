@@ -1,4 +1,4 @@
-From 625cb6824d03c14c26114e98f23e5af96528d832 Mon Sep 17 00:00:00 2001
+From 93607d415f29e87c3e9a3673e82a01f9532516ec Mon Sep 17 00:00:00 2001
 From: LG510S lab <lab@localhost>
 Date: Fri, 30 Oct 2026 21:26:06 +0000
 Subject: [PATCH] realtek: rtl930x: add Lianguo LG510S-4T2XS
@@ -20,17 +20,19 @@ sysupgrade from a TFTP-loaded initramfs.
  .../etc/uci-defaults/08_lg510s_https          |  17 ++
  .../etc/uci-defaults/09_lg510s_mgmt           |  39 +++
  .../etc/uci-defaults/10_lg510s_statistics     |  18 ++
+ .../etc/uci-defaults/11_lg510s_footstrap      |  20 ++
  .../etc/udhcpc.user.d/lg510s-fallback         |   7 +
  .../base-files/lib/upgrade/keep.d/lg510s      |   1 +
  .../dts/rtl9303_lianguo_lg510s-4t2xs.dts      | 256 ++++++++++++++++++
  target/linux/realtek/image/rtl930x.mk         |  18 ++
- 10 files changed, 421 insertions(+)
+ 11 files changed, 441 insertions(+)
  create mode 100644 target/linux/realtek/base-files/etc/uci-defaults/05_lg510s_port_defaults
  create mode 100644 target/linux/realtek/base-files/etc/uci-defaults/06_lg510s_lldpd
  create mode 100644 target/linux/realtek/base-files/etc/uci-defaults/07_lg510s_snmpd
  create mode 100644 target/linux/realtek/base-files/etc/uci-defaults/08_lg510s_https
  create mode 100644 target/linux/realtek/base-files/etc/uci-defaults/09_lg510s_mgmt
  create mode 100644 target/linux/realtek/base-files/etc/uci-defaults/10_lg510s_statistics
+ create mode 100644 target/linux/realtek/base-files/etc/uci-defaults/11_lg510s_footstrap
  create mode 100644 target/linux/realtek/base-files/etc/udhcpc.user.d/lg510s-fallback
  create mode 100644 target/linux/realtek/base-files/lib/upgrade/keep.d/lg510s
  create mode 100644 target/linux/realtek/dts/rtl9303_lianguo_lg510s-4t2xs.dts
@@ -204,6 +206,32 @@ index 0000000..8400dbc
 +	uci set luci_statistics.collectd_thermal.enable='1'
 +	uci set luci_statistics.collectd_sensors.enable='1'
 +	uci commit luci_statistics
++	mkdir -p "${MARKER%/*}"
++	touch "$MARKER"
++	;;
++esac
++
++exit 0
+diff --git a/target/linux/realtek/base-files/etc/uci-defaults/11_lg510s_footstrap b/target/linux/realtek/base-files/etc/uci-defaults/11_lg510s_footstrap
+new file mode 100644
+index 0000000..91c480d
+--- /dev/null
++++ b/target/linux/realtek/base-files/etc/uci-defaults/11_lg510s_footstrap
+@@ -0,0 +1,20 @@
++. /lib/functions.sh
++
++# Default to the Footstrap theme with its sidebar layout. luci-base already sets mediaurlbase to
++# Bootstrap, so Footstrap's own script never selects itself. Set once; the marker, kept across
++# sysupgrade, preserves a later choice of another theme or layout.
++MARKER=/etc/lg510s/footstrap-default
++
++case "$(board_name)" in
++lianguo,lg510s-4t2xs)
++	[ -f /etc/config/footstrap ] && [ ! -f "$MARKER" ] || exit 0
++	uci set luci.main.mediaurlbase='/luci-static/footstrap'
++	uci set footstrap.settings.layout='sidebar'
++	uci commit luci
++	uci commit footstrap
 +	mkdir -p "${MARKER%/*}"
 +	touch "$MARKER"
 +	;;

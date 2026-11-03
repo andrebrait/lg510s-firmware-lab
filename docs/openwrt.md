@@ -46,7 +46,7 @@ printf 'src-git packages https://git.openwrt.org/feed/packages.git\nsrc-git luci
 git -C feeds/luci am ../../luci-000*.patch  # nine patches
 git am ../0002-switchdev-config-add-package.patch
 ./scripts/feeds install -p luci luci
-./scripts/feeds install cgi-io luci-app-lldpd net-snmp luci-app-snmpd luci-ssl luci-app-switchdev luci-app-statistics collectd-mod-thermal collectd-mod-sensors
+./scripts/feeds install cgi-io luci-app-lldpd net-snmp luci-app-snmpd luci-ssl luci-app-switchdev luci-app-statistics collectd-mod-thermal collectd-mod-sensors luci-theme-footstrap
 cat > .config <<'EOF'
 CONFIG_TARGET_realtek=y
 CONFIG_TARGET_realtek_rtl930x=y
@@ -66,6 +66,7 @@ CONFIG_PACKAGE_luci-app-switchdev=y
 CONFIG_PACKAGE_luci-app-statistics=y
 CONFIG_PACKAGE_collectd-mod-thermal=y
 CONFIG_PACKAGE_collectd-mod-sensors=y
+CONFIG_PACKAGE_luci-theme-footstrap=y
 EOF
 make defconfig
 make -j"$(nproc)"
@@ -120,6 +121,7 @@ Stock U-Boot needs no change: its default `bootcmd=boota` loads OpenWrt. Putting
 - **Management address.** `/etc/uci-defaults/09_lg510s_mgmt` turns OpenWrt's untouched static default into a DHCP client (`proto 'dhcp'`, `retry '3'`), drops `ip6assign` and the ULA prefix, and sets `ipv6 '0'` on the `lan` device (`switch.1`), the option behind LuCI's Enable IPv6 checkbox. It runs once (marker `/etc/lg510s/mgmt-default`) and leaves any other configuration alone. While `lan` holds no lease, `/etc/udhcpc.user.d/lg510s-fallback` gives it `192.168.1.1/24` through netifd on each `leasefail`, so the lan firewall zone applies; a later lease replaces it. `retry` matters: with OpenWrt's default `-t 0` udhcpc retries forever and never reports `leasefail`. The bridge itself carries VLAN 1 tagged only and `eth0` is the CPU conduit, so neither needs IPv6 turned off. The fallback was tested on a throwaway interface; the full first boot is not yet tested. If the network already uses `192.168.1.1` and its DHCP server is down, the fallback address conflicts with it.
 - **Network reload.** On 2026-10-31, setting `ipv6 '0'` on the `eth0`, `switch` and `switch.1` device sections and running `/etc/init.d/network reload` made the switch unreachable; the reload that restored the old configuration did not bring it back, and only a power cycle did. The cause is not known; LuCI's Save & Apply on device settings may trigger the same reload.
 - **Temperatures.** The SoC sensor (`thermal_zone0`, `cpu-thermal`) and the four RTL8264B PHY sensors (hwmon, one per copper port) are read by two LuCI patches: Status -> Overview shows the CPU temperature, and Status -> Ports shows each port's temperature. The overview reads `/sys/devices/virtual/thermal/thermal_zone0/temp`, not the `/sys/class/thermal` symlink: rpcd checks file ACLs against the resolved path, so an ACL on the symlink is never matched. A DSA port has no `phydev` link in sysfs, so the RPC finds its PHY through the device tree `phy-handle`. SFP+ ports show the module's own temperature (`ethtool -m`, `module_temperature_measurement`) when the module has diagnostics; the passive DAC used in testing has none. `luci-app-statistics` with the thermal and sensors plugins graphs them under Statistics -> Graphs; `/etc/uci-defaults/10_lg510s_statistics` enables both plugins once. The graph history is kept in RAM and starts over after a reboot.
+- **Theme.** The image includes `luci-theme-footstrap`, and `/etc/uci-defaults/11_lg510s_footstrap` makes it the default theme with its sidebar layout, once (marker `/etc/lg510s/footstrap-default`). Choose another theme under System -> System -> Language and Style, or another Footstrap layout under System -> Footstrap. The Ports page sets its own card width, because themes size `.ifacebox` for the small overview badges (OpenWrt 2020 caps it at 150 px).
 - **Switch features.** `switchdev-config` adds its rules with `skip_sw`: a rule the switch cannot offload fails and is logged (`logread | grep switchdev`) instead of running on the CPU. Ingress limits need `kmod-sched-flower` and `kmod-sched-act-police`, which the package pulls in. `tc -j` does not report a police rate, so the Rate limiting page shows the configured incoming limit next to the hardware state.
 
 ## Fan
