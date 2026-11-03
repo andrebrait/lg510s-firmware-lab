@@ -1,4 +1,4 @@
-From 3f786338a0b51c76f13bd5e7a6de27b7d0d6952b Mon Sep 17 00:00:00 2001
+From 79fa4018b2d8ed2e0d1d75ec365496e00601ebc0 Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
 Date: Sat, 31 Oct 2026 11:15:30 +0000
 Subject: [PATCH 7/9] luci-app-switchdev: add application

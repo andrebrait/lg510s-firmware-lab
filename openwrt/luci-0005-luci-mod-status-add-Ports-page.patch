@@ -1,4 +1,4 @@
-From 97da50098881cc09fffcbd1a8e6b65c1cc61a90b Mon Sep 17 00:00:00 2001
+From a71da4772bea665b00f09b63d168da41f64ac8f3 Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
 Date: Sat, 31 Oct 2026 04:39:05 +0000
 Subject: [PATCH 5/9] luci-mod-status: add Ports page
@@ -19,7 +19,7 @@ Signed-off-by: Andre Brait <andrebrait@gmail.com>
 
 diff --git a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
 new file mode 100644
-index 0000000..a35c2d9
+index 0000000..e89f114
 --- /dev/null
 +++ b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
 @@ -0,0 +1,136 @@
@@ -150,7 +150,7 @@ index 0000000..a35c2d9
 +
 +		return E([], [
 +			E('h2', {}, [ _('Ports') ]),
-+			E('div', { 'class': 'cbi-map-descr' }, [ _('Link, flow control and Energy Efficient Ethernet (EEE) of the built-in Ethernet ports: what this device and the link partner advertise, and the negotiated result. Configure them per device under Network → Interfaces → Devices.') ]),
++			E('div', { 'class': 'cbi-map-descr' }, [ _('This page displays the link and hardware status of the built-in Ethernet ports.') ]),
 +			grid
 +		]);
 +	},

@@ -1,4 +1,4 @@
-From 664de1d9f931d828e9f197e9ee6452e777fe4f04 Mon Sep 17 00:00:00 2001
+From f12c616fd110a6e1b7326e1916117720b1884e7c Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
 Date: Sat, 31 Oct 2026 19:16:39 +0000
 Subject: [PATCH 8/9] luci-mod-status: show port temperatures on the Ports page
@@ -62,7 +62,7 @@ index 5ff679d..50a0651 100644
  			}
  
 diff --git a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
-index a35c2d9..507d535 100644
+index e89f114..3800db4 100644
 --- a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
 +++ b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
 @@ -73,7 +73,8 @@ function renderPort(name, st) {

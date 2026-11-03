@@ -1,4 +1,4 @@
-From 90983699991cbfa41450e7a02a32d1a70fc10f5c Mon Sep 17 00:00:00 2001
+From f108aa5f7d9e8d9047e9127e7d8d1ad950b9d24f Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
 Date: Sat, 31 Oct 2026 04:51:57 +0000
 Subject: [PATCH 6/9] luci-mod-network: add STP protocol option for bridges

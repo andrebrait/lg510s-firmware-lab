@@ -1,4 +1,4 @@
-From df31620e27a3918fe3ff10c446436a54cb5c8cdc Mon Sep 17 00:00:00 2001
+From 743d8c40753baafcb56219ae1f825fa441264aea Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
 Date: Sat, 31 Oct 2026 19:16:39 +0000
 Subject: [PATCH 9/9] luci-mod-status: show the CPU temperature on the overview
