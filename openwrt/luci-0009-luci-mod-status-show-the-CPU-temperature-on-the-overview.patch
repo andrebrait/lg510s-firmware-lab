@@ -1,62 +1,78 @@
-From 743d8c40753baafcb56219ae1f825fa441264aea Mon Sep 17 00:00:00 2001
+From 537b0faebf6d7072b14d041d753273c31f3ebf3c Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
 Date: Sat, 31 Oct 2026 19:16:39 +0000
 Subject: [PATCH 9/9] luci-mod-status: show the CPU temperature on the overview
 
-Read thermal_zone0 and add a CPU Temperature row to the System section
-when the device has a thermal sensor. The ACL names the resolved sysfs
-path, because rpcd checks file access after following symlinks.
+Add a CPU Temperature row to the System section. It shows the first
+thermal zone whose type contains cpu, soc or pkg, or else the first
+thermal zone with a reading, followed by the zone type, and "-" when
+the device has no thermal zone.
+
+The ACL names the sysfs paths under /sys/devices/virtual/thermal,
+because rpcd checks file access after following symlinks.
 
 Assisted-by: Claude:claude-opus-5-5
 Signed-off-by: Andre Brait <andrebrait@gmail.com>
 ---
- .../resources/view/status/include/10_system.js           | 9 +++++++--
- .../root/usr/share/rpcd/acl.d/luci-mod-status-index.json | 1 +
- 2 files changed, 8 insertions(+), 2 deletions(-)
+ .../view/status/include/10_system.js          | 19 +++++++++++++++++--
+ .../rpcd/acl.d/luci-mod-status-index.json     |  3 +++
+ 2 files changed, 20 insertions(+), 2 deletions(-)
 
 diff --git a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
-index 3a2d2f1..4a7797e 100644
+index 3a2d2f1..0c489f7 100644
 --- a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
 +++ b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
-@@ -34,7 +34,8 @@ return baseclass.extend({
+@@ -34,7 +34,18 @@ return baseclass.extend({
  			L.resolveDefault(callSystemInfo(), {}),
  			L.resolveDefault(callLuciVersion(), { revision: _('unknown version'), branch: 'LuCI' }),
  			L.resolveDefault(callGetUnixtime(), 0),
 -			uci.load('system')
 +			uci.load('system'),
-+			L.resolveDefault(fs.trimmed('/sys/devices/virtual/thermal/thermal_zone0/temp'), '')
++			L.resolveDefault(fs.list('/sys/devices/virtual/thermal'), []).then(function(entries) {
++				var zones = entries.filter(function(e) { return /^thermal_zone\d+$/.test(e.name) })
++					.map(function(e) { return '/sys/devices/virtual/thermal/' + e.name }).sort(L.naturalCompare);
++
++				return Promise.all(zones.map(function(zone) {
++					return Promise.all([
++						L.resolveDefault(fs.trimmed(zone + '/type'), ''),
++						L.resolveDefault(fs.trimmed(zone + '/temp'), '')
++					]);
++				}));
++			})
  		]);
  	},
  
-@@ -42,7 +43,8 @@ return baseclass.extend({
+@@ -42,7 +53,9 @@ return baseclass.extend({
  		var boardinfo   = data[0],
  		    systeminfo  = data[1],
  		    luciversion = data[2],
 -		    unixtime    = data[3];
 +		    unixtime    = data[3],
-+		    temperature = data[5];
++		    zones       = data[5].filter(function(z) { return z[1] !== '' && !isNaN(z[1]) }),
++		    cpuzone     = zones.filter(function(z) { return /cpu|soc|pkg/i.test(z[0]) })[0] || zones[0];
  
  		luciversion = luciversion.branch + ' ' + luciversion.revision;
  
-@@ -78,6 +80,9 @@ return baseclass.extend({
+@@ -78,6 +91,8 @@ return baseclass.extend({
  			) : null
  		];
  
-+		if (temperature)
-+			fields.push(_('CPU Temperature'), '%.1f\u202f°C'.format(+temperature / 1000));
++		fields.push(_('CPU Temperature'), cpuzone ? '%.1f\u202f°C (%s)'.format(+cpuzone[1] / 1000, cpuzone[0]) : '-');
 +
  		var table = E('table', { 'class': 'table' });
  
  		for (var i = 0; i < fields.length; i += 2) {
 diff --git a/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status-index.json b/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status-index.json
-index b3f2cef..bc52293 100644
+index b3f2cef..acd7344 100644
 --- a/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status-index.json
 +++ b/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status-index.json
-@@ -6,6 +6,7 @@
+@@ -6,6 +6,9 @@
  				"/etc/board.json": [ "read" ],
  				"/proc/sys/net/netfilter/nf_conntrack_count": [ "read" ],
  				"/proc/sys/net/netfilter/nf_conntrack_max": [ "read" ],
-+				"/sys/devices/virtual/thermal/thermal_zone0/temp": [ "read" ],
++				"/sys/devices/virtual/thermal": [ "list" ],
++				"/sys/devices/virtual/thermal/thermal_zone*/temp": [ "read" ],
++				"/sys/devices/virtual/thermal/thermal_zone*/type": [ "read" ],
  				"/www/luci-static/resources/view/status/include": [ "list" ]
  			},
  			"ubus": {
