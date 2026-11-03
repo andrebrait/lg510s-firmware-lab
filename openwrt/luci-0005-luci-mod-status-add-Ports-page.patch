@@ -1,4 +1,4 @@
-From da0058804a13f13ac078eb172e57b9105a5e8a02 Mon Sep 17 00:00:00 2001
+From 97da50098881cc09fffcbd1a8e6b65c1cc61a90b Mon Sep 17 00:00:00 2001
 From: Andre Brait <andrebrait@gmail.com>
 Date: Sat, 31 Oct 2026 04:39:05 +0000
 Subject: [PATCH 5/9] luci-mod-status: add Ports page
@@ -11,18 +11,18 @@ refreshes every five seconds.
 
 Signed-off-by: Andre Brait <andrebrait@gmail.com>
 ---
- .../resources/view/status/ports.js            | 135 ++++++++++++++++++
+ .../resources/view/status/ports.js            | 136 ++++++++++++++++++
  .../share/luci/menu.d/luci-mod-status.json    |  13 ++
  .../usr/share/rpcd/acl.d/luci-mod-status.json |   9 ++
- 3 files changed, 157 insertions(+)
+ 3 files changed, 158 insertions(+)
  create mode 100644 modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
 
 diff --git a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
 new file mode 100644
-index 0000000..4a193d0
+index 0000000..a35c2d9
 --- /dev/null
 +++ b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/ports.js
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,136 @@
 +'use strict';
 +'require dom';
 +'require rpc';
@@ -115,13 +115,14 @@ index 0000000..4a193d0
 +		[ _('Status'), known ? _('Not supported') : '-' ]
 +	]));
 +
-+	return E('div', { 'class': 'ifacebox', 'style': 'margin:0;text-align:left' }, [
++	/* themes size .ifacebox for the small badges on the overview (OpenWrt 2020: max-width 150px) */
++	return E('div', { 'class': 'ifacebox', 'style': 'margin:0;max-width:none;align-items:stretch;text-align:left' }, [
 +		E('div', { 'class': 'ifacebox-head', 'style': 'display:flex;align-items:center;gap:.5em;padding:.25em .5em' }, [
 +			E('img', { 'src': L.resource('icons/port_%s.svg').format(up ? 'up' : 'down'), 'style': 'width:28px' }),
 +			E('strong', {}, [ name ]),
 +			E('span', { 'style': 'margin-left:auto' }, [ !known ? '-' : up ? formatSpeed(link.speed) : _('no link') ])
 +		]),
-+		E('div', { 'class': 'ifacebox-body', 'style': 'display:grid;grid-template-columns:auto 1fr;gap:.15em .75em;padding:0 .5em .5em;font-size:90%;text-align:left' }, groups)
++		E('div', { 'class': 'ifacebox-body', 'style': 'display:grid;grid-template-columns:auto 1fr;gap:.15em .75em;padding:0 .5em .5em;font-size:90%;text-align:left;white-space:normal' }, groups)
 +	]);
 +}
 +
