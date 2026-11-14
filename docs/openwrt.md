@@ -47,6 +47,8 @@ git -C feeds/luci am ../../luci-000*.patch  # nine patches
 git am ../0002-switchdev-config-add-package.patch
 ./scripts/feeds install -p luci luci
 ./scripts/feeds install cgi-io luci-app-lldpd net-snmp luci-app-snmpd luci-ssl luci-app-switchdev luci-app-statistics collectd-mod-thermal collectd-mod-sensors luci-theme-footstrap
+mkdir -p files
+cp -R /path/to/this/repo/files/. files/
 cat > .config <<'EOF'
 CONFIG_TARGET_realtek=y
 CONFIG_TARGET_realtek_rtl930x=y
@@ -71,6 +73,8 @@ EOF
 make defconfig
 make -j"$(nproc)"
 ```
+
+The overlay disables the generated official snapshot package feeds. Their rolling packages may not match this custom image. Updates use a complete firmware image; installing additional packages requires a compatible, trusted repository in `/etc/apk/repositories.d/customfeeds.list`. Existing custom feed configuration is not changed.
 
 Outputs in `bin/targets/realtek/rtl930x/`: `…-initramfs-kernel.bin` (RAM boot), `…-squashfs-sysupgrade.bin` (6.55 MB with LuCI) and `…-squashfs-factory.bix`. All keep the stock uImage header value `0x83800000`.
 
