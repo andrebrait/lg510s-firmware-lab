@@ -64,21 +64,7 @@ This build changes a few defaults compared with upstream OpenWrt: the switch get
 
 ## Building
 
-The board patch applies to OpenWrt `19483fa9075686e7a627c777e09c0a24163c8323`. Build on Linux, as a normal user:
-
-```sh
-git clone https://git.openwrt.org/openwrt/openwrt.git
-cd openwrt
-git checkout 19483fa9075686e7a627c777e09c0a24163c8323
-git am /path/to/this/repo/openwrt/0001-realtek-rtl930x-add-Lianguo-LG510S-4T2XS.patch
-git am /path/to/this/repo/openwrt/0002-switchdev-config-add-package.patch
-./scripts/feeds update packages luci
-# The LuCI patches were made against the luci commit listed in docs/openwrt.md.
-git -C feeds/luci am /path/to/this/repo/openwrt/luci-000*.patch
-./scripts/feeds install -a
-```
-
-Then create `.config` as listed in [Building](docs/openwrt.md#building), run `make defconfig` and `make -j"$(nproc)"`. The images are in `bin/targets/realtek/rtl930x/`:
+Build on Linux as a normal user. Follow the pinned source revisions, feed setup, overlay and configuration in [Building](docs/openwrt.md#building). The overlay disables rolling snapshot package feeds, and the configuration omits LuCI's package manager. Update the switch using complete firmware images. The images are in `bin/targets/realtek/rtl930x/`:
 
 - `...-initramfs-kernel.bin`: boots from RAM, for installation and recovery.
 - `...-squashfs-sysupgrade.bin`: the image to install and update with.

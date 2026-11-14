@@ -37,23 +37,32 @@ The board definition is [`openwrt/0001-realtek-rtl930x-add-Lianguo-LG510S-4T2XS.
 
 ## Building
 
-Build on the analysis VM in a dedicated OpenWrt worktree at `19483fa9075686e7a627c777e09c0a24163c8323`, as the non-root build user. LuCI needs the `luci` feed and `cgi-io` from the `packages` feed; the image was built with `luci` at `c1b79e84ba2b51b8df3ceb0dad1798f15c12a6dc` and `packages` at `76bf8b232b20a0e66870096d21203d666afbee46`. The nine `openwrt/luci-*.patch` files go on top of `feeds/luci` with `git am`. They add EEE and flow-control advertisement choices to Network -> Interfaces -> Devices -> Configure; a `luci.getEthtoolStatus` RPC method that returns ethtool's link, pause and EEE state; Flow Control and EEE columns with the negotiated state next to Link Speed in the Devices tab, with the advertisements in tooltips; and a read-only Status -> Ports page with one card per port showing link details and what flow control and EEE this switch and the link partner advertise, and the result. Stock LuCI can set neither netifd's `eee` nor its `pause` option and shows no negotiation state.
+Build on Linux as a non-root user with Git identity configured. The following revisions were fetched from upstream on 2026-11-14. Board support is already in OpenWrt; apply only this repository's first-boot defaults from the historical board patch. The fork commits add the switch-specific LuCI features and `switchdev-config` on top of the pinned upstream feeds.
 
 ```sh
-git am 0001-realtek-rtl930x-add-Lianguo-LG510S-4T2XS.patch
-printf 'src-git packages https://git.openwrt.org/feed/packages.git\nsrc-git luci https://git.openwrt.org/project/luci.git\n' > feeds.conf
+LAB=/absolute/path/to/lg510s-firmware-lab
+git clone https://github.com/openwrt/openwrt.git openwrt-lg510s
+git clone https://github.com/openwrt/luci.git lg510s-luci
+git clone https://github.com/openwrt/packages.git lg510s-packages
+git -C lg510s-luci fetch https://github.com/andrebrait/luci.git '+refs/heads/*:refs/remotes/fork/*'
+git -C lg510s-packages fetch https://github.com/andrebrait/packages.git '+refs/heads/*:refs/remotes/fork/*'
+git -C lg510s-luci checkout -b build-lg510s 85c7f60405
+git -C lg510s-luci cherry-pick 4db571b c29b450 a095d24 08d8827 0092264 06752a4 90598ed 611d35e 6e3c559 74701ab abaf6cd
+git -C lg510s-packages checkout -b build-lg510s 00772801
+git -C lg510s-packages cherry-pick 3a6f1a1
+cd openwrt-lg510s
+git checkout -b build-lg510s 593608fbda
+git apply --include='target/linux/realtek/base-files/**' "$LAB/openwrt/0001-realtek-rtl930x-add-Lianguo-LG510S-4T2XS.patch"
+printf 'src-link packages %s/../lg510s-packages\nsrc-link luci %s/../lg510s-luci\n' "$PWD" "$PWD" > feeds.conf
 ./scripts/feeds update packages luci
-git -C feeds/luci am ../../luci-000*.patch  # nine patches
-git am ../0002-switchdev-config-add-package.patch
-./scripts/feeds install -p luci luci
-./scripts/feeds install cgi-io luci-app-lldpd net-snmp luci-app-snmpd luci-ssl luci-app-switchdev luci-app-statistics collectd-mod-thermal collectd-mod-sensors luci-theme-footstrap
+./scripts/feeds install -a
 mkdir -p files
-cp -R /path/to/this/repo/files/. files/
+cp -R "$LAB/files/." files/
 cat > .config <<'EOF'
 CONFIG_TARGET_realtek=y
 CONFIG_TARGET_realtek_rtl930x=y
 CONFIG_TARGET_realtek_rtl930x_DEVICE_lianguo_lg510s-4t2xs=y
-CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-light=y
 CONFIG_PACKAGE_cgi-io=y
 CONFIG_PACKAGE_ethtool-full=y
 CONFIG_PACKAGE_ip-full=y
@@ -62,7 +71,8 @@ CONFIG_PACKAGE_luci-app-lldpd=y
 CONFIG_PACKAGE_ustp=y
 CONFIG_PACKAGE_snmpd-ssl=y
 CONFIG_PACKAGE_luci-app-snmpd=y
-CONFIG_PACKAGE_luci-ssl=y
+CONFIG_PACKAGE_libustream-mbedtls=y
+CONFIG_PACKAGE_px5g-mbedtls=y
 CONFIG_PACKAGE_kmod-bonding=y
 CONFIG_PACKAGE_luci-app-switchdev=y
 CONFIG_PACKAGE_luci-app-statistics=y
@@ -74,9 +84,9 @@ make defconfig
 make -j"$(nproc)"
 ```
 
-The overlay disables the generated official snapshot package feeds. Their rolling packages may not match this custom image. Updates use a complete firmware image; installing additional packages requires a compatible, trusted repository in `/etc/apk/repositories.d/customfeeds.list`. Existing custom feed configuration is not changed.
+The overlay disables the generated official snapshot package feeds. Their rolling packages may not match this custom image. The image also omits the LuCI package manager; `luci-light`, `libustream-mbedtls`, and `px5g-mbedtls` keep LuCI and HTTPS without it. Updates use a complete firmware image; installing additional packages requires a compatible, trusted repository in `/etc/apk/repositories.d/customfeeds.list`. Existing custom feed configuration is not changed.
 
-Outputs in `bin/targets/realtek/rtl930x/`: `…-initramfs-kernel.bin` (RAM boot), `…-squashfs-sysupgrade.bin` (6.55 MB with LuCI) and `…-squashfs-factory.bix`. All keep the stock uImage header value `0x83800000`.
+Outputs in `bin/targets/realtek/rtl930x/`: `…-initramfs-kernel.bin` (RAM boot), `…-squashfs-sysupgrade.bin` and `…-squashfs-factory.bix`. All keep the stock uImage header value `0x83800000`.
 
 ## Installing
 
