@@ -18,7 +18,7 @@ The five most useful resources, in order:
 
 Recommended model to impersonate: **`US6XG150` (US-XG-6PoE)**, the only UniFi model whose registered port layout is exactly four copper ports plus two SFP+ ports. **`USWED76` (USW-Pro-XG-8-PoE)**, a Realtek RTL9313 + RTL8264B switch, is the fallback. `US6XG150` was adopted in the lab: the controller provisioned six ports named `Port 1`-`Port 4`, `SFP+ 1`, `SFP+ 2`, and sent the port, VLAN, LAG, mirror, STP, isolation, storm-control and rate-limit settings as `switch.*` keys. Which features the controller offers depends on the capability bits the device reports, not on the model.
 
-Another survey of the same question, written for the RTL837x 8051 port of RTLPlayground, is in that repository at `doc/unifi-protocol-research.md`. It found the switch-emulation projects listed last in the table below.
+Another survey of the same question, written for the RTL837x 8051 port of RTLPlayground, is in that repository at [`doc/unifi-protocol-research.md`](https://github.com/andrebrait/RTLPlayground/blob/3de4f03b/doc/unifi-protocol-research.md); the "RTLPlayground lab" cited below is the lab recorded there. It found the switch-emulation projects listed last in the table below.
 
 ## Projects
 
@@ -199,7 +199,7 @@ The image is upstream OpenWrt `main` with the board in tree (openwrt/openwrt#263
 | Flow control | `switch.port.N.flowctrl`, `flowctrl_rx/tx` | netifd `pause` (advertisement only, deliberately not `rxpause`/`txpause`); status via `getEthtoolStatus` (openwrt/luci#9178) or `ethtool -a` | Available |
 | EEE | `switch.port.N.eee`, `port_caps` EEE | netifd `eee`; copper only | Available |
 | Jumbo frames, MTU | `switch.jumboframes`, `switch.mtu`, `port.N.mtu` | netifd `mtu` | Available; only 1522 exercised |
-| Networks/VLANs, native VLAN, tagged/untagged/blocked | `switch.vlan.*`, `switch.port.N.pvid`, `switch.vlan.M.port.N.mode` | UCI `bridge-vlan` sections on device `switch`, port lists with `:t`, `:u*`; offloaded by `port_vlan_add` | Available; VLAN isolation untested; OpenWrt #25993 (VID 0 leak) was open on 2026-10-19 |
+| Networks/VLANs, native VLAN, tagged/untagged/blocked | `switch.vlan.*`, `switch.port.N.pvid`, `switch.vlan.M.port.N.mode` | UCI `bridge-vlan` sections on device `switch`, port lists with `:t`, `:u*`; offloaded by `port_vlan_add` | Available; VLAN isolation untested; openwrt/openwrt#25993 (VID 0 leak) was open on 2026-10-19 |
 | Management VLAN and IP | `switch.managementvlan`, `netconf.*`, `dhcpc.*` | `lan` on `switch.1`, DHCP by default | Available, **risky**: a network reload once made a unit unreachable until power-cycled ([known issues](openwrt.md#known-issues-and-cautions)); apply with a rollback timer |
 | STP/RSTP, bridge priority | `switch.stp.{status,version,priority}`, `stp_priority` | `ustp`, UCI `stp`, `stp_proto`, `priority`; hardware via `port_stp_state_set` | Available (RSTP tested) |
 | Per-port STP mode, cost, edge | `switch.port.N.stp.{port_mode,cost,edge}` | ustp/bridge port options | Partial: per-port UCI support in `ustp` **UNVERIFIED** |
@@ -210,7 +210,7 @@ The image is upstream OpenWrt `main` with the board in tree (openwrt/openwrt#263
 | Egress rate limit | `switch.port.N.egress_rate_limit_kbps` | `switchdev-config` `config ratelimit` `egress` (Mbit/s; convert from kbit/s) | Available, offloaded |
 | Static MAC entries | (UniFi feature and key **UNVERIFIED**) | `switchdev-config` `config fdb` | Available |
 | MAC table per port | `port_table[].mac_table` | `bridge -j fdb show` (switch `self` entries, as on the MAC table page), ARP for IPs | Available |
-| Port isolation | `switch.port.N.isolation` | bridge port `isolated` flag (driver supports `BR_ISOLATED`) | Partial: no UCI option; agent would set it at runtime |
+| Port isolation | `switch.port.N.isolation` | netifd device option `isolate` (bridge port `isolated` flag; the driver supports `BR_ISOLATED`) | Available; untested on this board |
 | IGMP snooping, querier | `switch.igmp_snooping.*`, `switch.multicast.*` | bridge `igmp_snooping`, `multicast_querier`; offload `port_mdb_add` | Available, untested |
 | Storm control | `switch.port.N.stormctrl.*` | none; no RTL930x driver support | Gap |
 | LLDP, neighbours | `switch.lldp.*`, `port.N.lldp.opmode`, `lldp_table` | `lldpd` (UCI `/etc/config/lldpd`), neighbours from `lldpcli -f json show neighbors` | Available; off by default |
@@ -227,7 +227,7 @@ The image is upstream OpenWrt `main` with the board in tree (openwrt/openwrt#263
 | SNMP | `snmp.*` (**UNVERIFIED** key names) | `snmpd` | Available; off by default |
 | 802.1X, port security, DHCP snooping/guard, ACL, QoS/DSCP, L3 routing, PoE | various | none (PoE: no hardware) | Gap; do not claim |
 
-Bits to claim at first, given the table: STP `64`, IGMP snooping `256`, egress rate limit `32`, bridge VLAN filter `262144`, jumbo `524288`, and port isolation `4` and LACP `8192` once implemented and tested; EEE in `port_caps` on copper ports; `poe_caps 0`. Values that real USWs send but whose effect is unknown should be learned from a capture, not guessed.
+Bits to claim at first, given the table: STP `64`, IGMP snooping `256`, egress rate limit `32`, jumbo `524288`, and port isolation `4` and LACP `8192` once implemented; EEE in `port_caps` on copper ports; `poe_caps 0`. The agent implements isolation and LACP through netifd and claims them; both still need a test on the switch before the agent is used in production (see [Agent lab run](#agent-lab-run-2026-11-20)). Bridge VLAN filter `262144` is not claimed: VLANs worked in the lab without it, and what it unlocks is unknown. Values that real USWs send but whose effect is unknown should be learned from a capture, not guessed.
 
 ## The agent
 
@@ -244,7 +244,7 @@ The agent is the `unifi-agent` package (andrebrait/packages branch `unifi-agent`
 
   Claimed capability bits: isolation `4`, STP `64`, IGMP snooping `256`, LACP `8192` and jumbo `524288`, plus egress rate limit `32` and one mirror session when `switchdev-config` is installed.
 - **Safety.** After a commit the network is reloaded. If the controller cannot be reached within a minute, the previous `network`, `switchdev` and `wireless` files are restored. Firmware upgrades are refused.
-- **Adoption.** A controller adopts a device in its own subnet over SSH (see the AP run in [Agent lab run](#agent-lab-run-2026-11-20)). While pending, the agent keeps a `ubnt` account whose login shell only records `set-adopt`/`set-inform`, served by a dropbear instance on port 2222 that runs nothing else. The account is removed once the device is adopted.
+- **Adoption.** A controller adopts a device in its own subnet over SSH (see the AP run in [Agent lab run](#agent-lab-run-2026-11-20)). With `option ssh_adopt '1'` (off by default), while pending, the agent keeps a `ubnt` account whose login shell only records `set-adopt`/`set-inform`, served by a dropbear instance on port 2222 that runs nothing else and allows no forwarding. The account is removed once the device is adopted or SSH adoption is turned off. Controller replies must be encrypted, and AES-GCM once negotiated; a reply under the factory key does not reset an adopted device.
 
 ## Lab validation, 2026-11-20
 
@@ -468,7 +468,7 @@ What the web UI showed:
 
 ### Firmware upgrades
 
-All three emulated devices reported firmware 7.4.1.16850 and were marked `upgradable` to 7.6.11.17272. A manual upgrade sent:
+Every emulated device reported firmware 7.4.1.16850 and were marked `upgradable` to 7.6.11.17272. A manual upgrade sent:
 
 ```json
 {"_type": "upgrade", "version": "7.6.11.17272", "md5sum": "...",
@@ -500,16 +500,17 @@ The agent ran against the same controller (10.6.109). It ran in Debian container
 
 ## Risks and unknowns
 
+- **SSH adoption.** A controller on the switch's own subnet adopts over SSH with the factory login `ubnt`/`ubnt`. While SSH adoption is on and the switch is pending, anyone on that network can adopt it into their own controller and push its configuration. If the system dropbear on port 22 accepts passwords, that login can also forward TCP connections through the switch. The agent keeps SSH adoption off by default; turn it on only for the adoption, or use the inform URL from a controller on another subnet.
 - **Controller changes.** Obfuscated class names, capability gates and adoption details change between controller builds. Both AP projects track a specific Network version and keep "unhandled" ledgers for this reason. Expect maintenance on each controller release.
 - **Model identity.** Impersonating `US6XG150` means the controller's UI, firmware offers, topology pictures and support data describe a Broadcom PoE switch. Upgrade offers must be answered without applying them, or the nightly auto-upgrade keeps retrying.
 - **Device authenticity.** No evidence was found that Network 10.6 verifies device hardware or a device certificate before adoption: openUF and unifi-openwrt adopt OpenWrt APs on 10.6, and unifi-emu adopts software-only switches. Fields like `anon_id` and `hash_id` are not checked as far as those projects found. Whether UniFi OS consoles or a future release add a signed device identity is **UNVERIFIED**; it would end all of these projects at once.
-- **Terms.** Ubiquiti's terms of service and EULA were not reviewed; **UNVERIFIED** whether they restrict using the controller with non-Ubiquiti devices. Keep Ubiquiti names and images out of the package, and do not distribute Ubiquiti binaries or controller files.
+- **Terms.** Ubiquiti's terms of service and EULA were not reviewed; **UNVERIFIED** whether they restrict using the controller with non-Ubiquiti devices. Keep Ubiquiti images, logos and product names out of the package's own text and UI; the model identifiers and names in its catalog are protocol data the controller needs. Do not distribute Ubiquiti binaries or controller files.
 - **Hardware unknowns carried from this image**: VLAN isolation, LAG and IGMP snooping are untested on this board; storm control is not supported by the driver.
 
 ## Recommended starting point
 
 1. Read [unifi-openwrt `docs/internals.md`](https://github.com/antoniocosta/unifi-openwrt/blob/8e87294191/docs/internals.md) and its `internal/inform`, `internal/device` and `internal/translate` packages for the client and translator structure; then [openUF `PROTOCOL-VALIDATION.md`](https://github.com/yesrab/openUF/blob/3da571983b/PROTOCOL-VALIDATION.md) for the GCM gate, adoption, `switch.*` and `port_table`. Licences: GPL-2.0 and GPL-3.0; unifi-emu and pixiedust are MIT.
-2. Done for `US6XG150`, and for a borrowed `US8` with the LG510S port layout; see [Lab validation](#lab-validation-2026-11-20). Still open: LACP versus static LAG (no `lacp` key was ever sent), the voice VLAN, how the reported version affects upgrade offers, and a run as `USWED76`.
+2. Done for `US6XG150`, and for a borrowed `US8` with the LG510S port layout; see [Lab validation](#lab-validation-2026-11-20). Still open: the voice VLAN, how the reported version affects upgrade offers, and a run as `USWED76`.
 3. Write the translator against the captured keys, with each still-open item treated as unknown until it is captured.
 4. If a real Realtek UniFi switch is available (USW-Aggregation or USW-Pro-XG-8-PoE), capture from it: `mca-dump` and `mca-dump -g` over SSH, `cat /tmp/system.cfg` (path **UNVERIFIED**; find the running config), and a pcap of a fresh adoption with its authkey recovered by pixiedust. That is ground truth for `port_table`, `switch_caps` and `speed_caps` on 10G Realtek hardware.
 5. Done: the agent is written (see [The agent](#the-agent)). Next, run it on a switch with `option apply '0'`, read the logged plans, then enable applying one feature at a time.
