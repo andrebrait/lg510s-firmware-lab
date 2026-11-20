@@ -49,7 +49,7 @@ git -C lg510s-packages fetch https://github.com/andrebrait/packages.git '+refs/h
 git -C lg510s-luci checkout -b build-lg510s 85c7f60405
 git -C lg510s-luci cherry-pick 4db571b c29b450 a095d24 08d8827 0092264 06752a4 90598ed 611d35e 6e3c559 74701ab abaf6cd 224b1b5 854e5e1 da164c5
 git -C lg510s-packages checkout -b build-lg510s 00772801
-git -C lg510s-packages cherry-pick 3a6f1a1 eedfed5 461a836 741da73
+git -C lg510s-packages cherry-pick 3a6f1a1 eedfed5 461a836 741da73 522c2eb
 cd openwrt-lg510s
 git checkout -b build-lg510s 593608fbda
 git apply --include='target/linux/realtek/base-files/**' "$LAB/openwrt/0001-realtek-rtl930x-add-Lianguo-LG510S-4T2XS.patch"
