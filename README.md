@@ -56,7 +56,7 @@ Every port, the port LEDs, the system LED, the reset button and the SFP+ module 
 - Negotiated flow-control and EEE state in the Devices tab, and a Status -> Ports page.
 - Network -> Switch features: the switch's MAC address table with static entries, port mirroring, and per-port ingress and egress rate limits, all offloaded to the switch chip.
 - CPU and per-port temperatures on Status -> Overview and Status -> Ports, and temperature, load and memory graphs under Statistics -> Graphs.
-- UniFi controller adoption (Services -> UniFi controller), off until enabled: the switch is shown as a UniFi `US6XG150`, takes its port, VLAN, LACP, STP and IGMP settings from the controller and reports its status. Lab-tested only; see [UniFi controller adoption](docs/unifi-adoption.md).
+- UniFi controller adoption (Services -> UniFi controller), off until enabled: the switch is shown as a UniFi `US6XG150`, reports its status, and takes its port, VLAN, LACP, STP and IGMP settings from the controller once `apply` is turned on (it only logs them by default). Lab-tested only; see [UniFi controller adoption](docs/unifi-adoption.md).
 - LLDP (`lldpd`) and SNMP (`snmpd`), both off until enabled, RSTP (`ustp`), link aggregation (`kmod-bonding`) and HTTPS for LuCI.
 
 See [OpenWrt on the LG510S-4T2XS](docs/openwrt.md) for the test results, and the [feature gap](docs/openwrt-feature-gap.md) for what the stock firmware did that this image does not do yet. Open features are tracked as issues.
