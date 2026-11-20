@@ -423,7 +423,10 @@ So a borrowed model with a different port count works. The agent must ignore `sw
 
 - The controller adopted it normally and stored `poe_caps: 0` on every port. It raised no alarm, no event and no log line about the mismatch, and the device was not marked unsupported or incompatible.
 - No PoE key reached `system_cfg` on either device, not even after a `poe_mode` override of `off` or `auto`. The only power-related key sent was `switch.power_source.status=disabled`. The controller's config generator has the strings `switch.poe`, `power_budget` and `power_source_ctrl`, so PoE configuration probably also depends on a power budget that the emulator does not report. This is **UNVERIFIED**.
-- Whether the web UI hides the PoE controls for ports with `poe_caps: 0` was not checked.
+- The web UI hides PoE for that device. Compared with a `US6XG150` that reports `poe_caps: 7`:
+  - The Port Manager has no PoE Mode column and no PoE legend, and the PoE filter reads "None (6)".
+  - The per-port settings panel has no PoE selector. The PoE device offers Off, PoE+ and 24V Passive there.
+  - The model name still reads "US XG 6 PoE" everywhere.
 
 So the agent should report `poe_caps: 0` and `port_poe: false` on every port, report no power budget, and ignore any `switch.poe*` or `switch.port.N.poe*` key it receives.
 
