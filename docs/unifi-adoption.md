@@ -229,15 +229,22 @@ The image is upstream OpenWrt `main` with the board in tree (openwrt/openwrt#263
 
 Bits to claim at first, given the table: STP `64`, IGMP snooping `256`, egress rate limit `32`, bridge VLAN filter `262144`, jumbo `524288`, and port isolation `4` and LACP `8192` once implemented and tested; EEE in `port_caps` on copper ports; `poe_caps 0`. Values that real USWs send but whose effect is unknown should be learned from a capture, not guessed.
 
-## Shape of the package
+## The agent
 
-A procd service, `unifi-agent` or similar, with:
+The agent is the `unifi-agent` package (andrebrait/packages branch `unifi-agent`, `net/unifi-agent`), with the LuCI page `luci-app-unifi-agent` (andrebrait/luci branch `luci-app-unifi-agent`). It is generic OpenWrt: nothing in it is specific to this board. Its README covers setup and the full mapping; this section records the choices made for this image.
 
-- **UCI** `/etc/config/unifi`: `enabled`, `inform_url` (IP literal), `model` (default `US6XG150`), `apply` (log-only first, as unifi-openwrt does), and state kept outside `/etc/config` (authkey, `cfgversion`, adopted flag) in a mode-600 file that sysupgrade keeps.
-- **Inform client**: HTTP POST, AES-128-GCM/CBC, zlib, JSON. `libmbedtls` is already in the image for `libustream-mbedtls` and implements both modes; `libubox` (`blobmsg_json`, `uloop`) is in base; `zlib` is one package more. A small C or ucode daemon over these adds the least to the 12 MiB firmware partition; a Go binary (unifi-openwrt) or Lua with `lua-openssl` (openUF) works but costs more flash. Measure before choosing.
-- **Translator**: `system_cfg` → UCI changes on `network` (`bridge-vlan`, `device`, bonding), `switchdev`, `lldpd`, `system`, `snmpd`, then `reload_config`. Apply as one transaction with a rollback timer that restores the last good configuration if the controller is not reachable afterwards; the management address is the dangerous part. Record every key it does not handle in an "unhandled" ledger (unifi-openwrt, openUF), so a new controller version shows up as a list of new keys.
-- **Collector**: `port_table` from rtnetlink/ethtool netlink (link, speed, counters, pause, EEE), `bridge` (FDB, STP state, VLANs), `lldpcli` JSON, hwmon/thermal, `ubus call system info`.
-- **Adoption**: L3 inform only to start, with the controller address set in UCI. This needs no `ubnt` account and no SSH changes. Broadcast discovery and the SSH path can follow; if added, prefer unifi-openwrt's separate single-command SSH responder over a second Dropbear login on port 22.
+- **Language.** ucode, which is already in the image for LuCI and netifd, plus about 180 lines of C for AES-128-CBC and -GCM on the mbedTLS library that is already there. unifi-openwrt's Go binary (8–10 MB) does not fit the 12 MiB firmware partition. The ucode modules it needs (`fs`, `uci`, `socket`, `struct`, `zlib`) are a few tens of KB.
+- **Model.** `option model 'auto'` matches the copper and fibre port counts against a 174-model catalog generated from unifi-emu, so this board is shown as `US6XG150` without configuration. PoE is never reported unless a port is marked `poe`. `unifi-agent show` and the LuCI page draw the UniFi ports with the local port behind each one.
+- **Bridge.** The managed bridge is the one the management interface is on, so `lan` on `switch.1` gives the bridge `switch`.
+- **Translation.** Everything in [Mapping to this firmware](#mapping-to-this-firmware) marked available is applied through netifd UCI:
+  - `bridge-vlan` with `vlan_filtering`, and a bonding device for LACP;
+  - device `enabled`, `autoneg`, `speed`, `duplex`, `pause`, `eee`, `isolate` (netifd has a UCI option for it after all), `mtu` and `multicast_fast_leave`;
+  - bridge `stp`, `stp_proto`, `priority` and `igmp_snooping`;
+  - mirroring and egress limits through `switchdev-config`.
+
+  Claimed capability bits: isolation `4`, STP `64`, IGMP snooping `256`, LACP `8192` and jumbo `524288`, plus egress rate limit `32` and one mirror session when `switchdev-config` is installed.
+- **Safety.** After a commit the network is reloaded. If the controller cannot be reached within a minute, the previous `network`, `switchdev` and `wireless` files are restored. Firmware upgrades are refused.
+- **Adoption.** A controller adopts a device in its own subnet over SSH (see the AP run in [Agent lab run](#agent-lab-run-2026-11-20)). While pending, the agent keeps a `ubnt` account whose login shell only records `set-adopt`/`set-inform`, served by a dropbear instance on port 2222 that runs nothing else. The account is removed once the device is adopted.
 
 ## Lab validation, 2026-11-20
 
@@ -476,6 +483,21 @@ The agent must never download or apply this file. If it ignores the message, the
 - Restart arrives as `{"_type": "reboot", "reboot_type": "soft", ...}`.
 - Between changes the controller answers `noop` with `interval: 10`.
 
+### Agent lab run, 2026-11-20
+
+The agent ran against the same controller (10.6.109). It ran in Debian containers with ucode built from source, not on OpenWrt: netifd, ubus and `wifi` were absent, so each plan was committed to UCI but not reloaded.
+
+- **Switch, inform adoption.** Fake ports `lan1`–`lan6` (four `GE`, two `SFP+`) were shown as `US6XG150` with no configuration.
+  - The device was adopted through `setparam` and connected with AES-GCM. `known_cfgversion` matched the device's, so there was no resend loop.
+  - The site's settings arrived and were committed: VLANs 1/10/20, jumbo frames, STP and IGMP snooping.
+  - A later port override was translated into `bridge-vlan` changes and a `lag1` 802.3ad bond, and no other change. It set port 2 to native VLAN 10 with "block all" tagged VLANs, and aggregated ports 3+4.
+- **Access point, SSH adoption.** Two `wifi-device` sections were shown as `U7PG2`. On the device's own subnet the controller did not adopt by inform:
+  - It logged `SSH adopt failed ip[...],msg[unreachable]` and left the device in `ADOPT_FAILED`.
+  - The switch had been adopted by inform only because it reported IP `0.0.0.0` at the time ("discovered via L3 inform, skip SSH adoption").
+  - With the SSH endpoint, the controller logged in as `ubnt` and ran `set-adopt`, and the device was connected.
+  - A WPA2 WLAN on VLAN 10 then became one `wifi-iface` per radio on an unaddressed `unifi_v10` network. The controller sent only `WPA-PSK` for `U7PG2`, not SAE, so WPA3 depends on the model chosen.
+- **Not run.** Nothing yet on the switch itself or on OpenWrt: netifd's handling of the generated bond and VLAN configuration, the rollback, LLDP and SFP readings.
+
 ## Risks and unknowns
 
 - **Controller changes.** Obfuscated class names, capability gates and adoption details change between controller builds. Both AP projects track a specific Network version and keep "unhandled" ledgers for this reason. Expect maintenance on each controller release.
@@ -490,4 +512,4 @@ The agent must never download or apply this file. If it ignores the message, the
 2. Done for `US6XG150`, and for a borrowed `US8` with the LG510S port layout; see [Lab validation](#lab-validation-2026-11-20). Still open: LACP versus static LAG (no `lacp` key was ever sent), the voice VLAN, how the reported version affects upgrade offers, and a run as `USWED76`.
 3. Write the translator against the captured keys, with each still-open item treated as unknown until it is captured.
 4. If a real Realtek UniFi switch is available (USW-Aggregation or USW-Pro-XG-8-PoE), capture from it: `mca-dump` and `mca-dump -g` over SSH, `cat /tmp/system.cfg` (path **UNVERIFIED**; find the running config), and a pcap of a fresh adoption with its authkey recovered by pixiedust. That is ground truth for `port_table`, `switch_caps` and `speed_caps` on 10G Realtek hardware.
-5. Only then write the agent, starting with inform, L3 adoption, read-only `port_table` and `apply '0'`, and add translator sections one feature at a time, each claimed only after it is tested on the switch.
+5. Done: the agent is written (see [The agent](#the-agent)). Next, run it on a switch with `option apply '0'`, read the logged plans, then enable applying one feature at a time.
