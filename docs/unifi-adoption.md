@@ -1,6 +1,6 @@
 # UniFi controller adoption — research, 2026-11-20
 
-Can the LG510S-4T2XS, running this repository's OpenWrt image, be adopted and managed by a UniFi Network controller as if it were a UniFi switch? This note collects the evidence: existing device-side implementations of the UniFi inform protocol, the protocol itself, what a real UniFi switch sends and receives, which UniFi model fits this board, and how each controller-side switch feature would map onto the components already in this image. Nothing here has been run against a controller or on the switch. Controller account management is out of scope.
+Can the LG510S-4T2XS, running this repository's OpenWrt image, be adopted and managed by a UniFi Network controller as if it were a UniFi switch? This note collects the evidence: existing device-side implementations of the UniFi inform protocol, the protocol itself, what a real UniFi switch sends and receives, which UniFi model fits this board, and how each controller-side switch feature would map onto the components already in this image. Nothing here has been run on the switch. An emulated device was adopted by a local UniFi Network 10.6.109 controller; see [Lab validation](#lab-validation-2026-11-20). Controller account management is out of scope.
 
 Primary evidence was read from source code, from the UniFi Network Application 10.6.109 package and from Ubiquiti's own switch firmware, downloaded from Ubiquiti's public firmware catalog. Claims taken from a secondary source are attributed; claims that could not be checked against a primary source are marked **UNVERIFIED**.
 
@@ -16,7 +16,9 @@ The five most useful resources, in order:
 4. **Ubiquiti's USW-Aggregation firmware 7.5.15** (`USL8A`, platform `US.rtl930x`): the same SoC family as this board. Its plaintext initramfs holds `mcad` (the inform agent), `syswrapper.sh`, `mca-dump`, and in `ubntbox` the full `switch.*` configuration key set.
 5. **[jda/pixiedust](https://github.com/jda/pixiedust)** (Go, MIT): decrypts inform captures; its `unifi-fresh-usw.pcap` is a real USW-Pro-24 adoption with the switch's complete inform payload and the controller's `system_cfg`. It is the only real switch-side capture found.
 
-Recommended model to impersonate: **`US6XG150` (US-XG-6PoE)**, the only UniFi model whose registered port layout is exactly four copper ports plus two SFP+ ports. **`USWED76` (USW-Pro-XG-8-PoE)**, a Realtek RTL9313 + RTL8264B switch, is the fallback if the controller's Broadcom-classified model turns out to behave differently. Both need testing.
+Recommended model to impersonate: **`US6XG150` (US-XG-6PoE)**, the only UniFi model whose registered port layout is exactly four copper ports plus two SFP+ ports. **`USWED76` (USW-Pro-XG-8-PoE)**, a Realtek RTL9313 + RTL8264B switch, is the fallback. `US6XG150` was adopted in the lab: the controller provisioned six ports named `Port 1`-`Port 4`, `SFP+ 1`, `SFP+ 2`, and sent the port, VLAN, LAG, mirror, STP, isolation, storm-control and rate-limit settings as `switch.*` keys. Which features the controller offers depends on the capability bits the device reports, not on the model.
+
+Another survey of the same question, written for the RTL837x 8051 port of RTLPlayground, is in that repository at `doc/unifi-protocol-research.md`. It found the switch-emulation projects listed last in the table below.
 
 ## Projects
 
@@ -38,6 +40,10 @@ Last activity is the latest push date reported by the GitHub API on 2026-11-20.
 | [rbradley0/ubnt_inform](https://github.com/rbradley0/ubnt_inform) | Python, MIT | 2021-12-20 | Client/server experiments | Work in progress | No |
 | [damienheiser/ripugw](https://github.com/damienheiser/ripugw) | Go, NOASSERTION | 2023-03-07 | Gateway on pfSense | Not assessed | No |
 | [fxkr/unifi-protocol-reverse-engineering](https://github.com/fxkr/unifi-protocol-reverse-engineering) | Docs | 2015-03-23 | — | Original header/CBC description | No |
+| [MartinDejmal/unifi-simulator](https://github.com/MartinDejmal/unifi-simulator) | Python, no licence file | 2026-10-16 | Switch (`US8`, `US24PRO2`) fed from MikroTik RouterOS, and `UGW3` | Adoption to connected on Network 10.6.106; `port_table`, `mac_table` and `lldp_table` accepted (its `docs/validation.md`) | Yes, read-only: never applies controller config |
+| [konstruktor1/unifi-stubd](https://github.com/konstruktor1/unifi-stubd) | Go, no licence file | 2026-10-31 | A Linux bridge (or FreeBSD) presented as a `US8` | Discovery, inform, optional SSH shim for `set-adopt`; detailed `docs/en/protocol-notes.md`; reports 10.5.67 | Yes, read-only |
+| [benklop/unifi-tlsg](https://github.com/benklop/unifi-tlsg) | Python, no licence file | 2026-07-26 | TP-Link TL-SG2424 presented as a `US24`, via an inform proxy | Applies VLAN and port config over the TP-Link SSH CLI; README says it needs lab validation | Parses `port.N.*` keys, which disagrees with the `switch.port.N.*` keys captured below |
+| [ArmedGuy/unifiction](https://github.com/ArmedGuy/unifiction) | Go, no licence file | 2020-09-27 | SNMP or Cisco switches via L3 adoption | Reports config as applied without applying it | Old; same idea |
 | [jeffreykog/unifi-inform-protocol](https://github.com/jeffreykog/unifi-inform-protocol) | Docs | 2020-05-18 | — | Header, flags incl. GCM and snappy | No |
 | [mcrute/ubntmfi](https://github.com/mcrute/ubntmfi) | Python, BSD-3-Clause | 2017-08-16 | mFi controller | Early protocol notes (`inform_protocol.md`) | No |
 | [nitefood/python-ubnt-discovery](https://github.com/nitefood/python-ubnt-discovery), [maxried/udpr](https://github.com/maxried/udpr) | Python, MIT | 2022, 2018 | UDP 10001 discovery | Discovery client / TLV decoder | No |
@@ -233,6 +239,131 @@ A procd service, `unifi-agent` or similar, with:
 - **Collector**: `port_table` from rtnetlink/ethtool netlink (link, speed, counters, pause, EEE), `bridge` (FDB, STP state, VLANs), `lldpcli` JSON, hwmon/thermal, `ubus call system info`.
 - **Adoption**: L3 inform only to start, with the controller address set in UCI. This needs no `ubnt` account and no SSH changes. Broadcast discovery and the SSH path can follow; if added, prefer unifi-openwrt's separate single-command SSH responder over a second Dropbear login on port 22.
 
+## Lab validation, 2026-11-20
+
+An emulated `US6XG150` was adopted by a local controller and its provisioning was captured. Nothing ran on the switch, and no real Ubiquiti device was involved.
+
+Setup, all on one workstation under Docker, on a private Docker network so that discovery could not reach any production controller:
+
+- Controller: `ghcr.io/jamesbraid/unifi-network:seeded` (UniFi Network Application 10.6.109, first-run wizard already completed, empty site).
+- Device: [jamesbraid/unifi-emu](https://github.com/jamesbraid/unifi-emu) at `a538889`, run as `-model US6XG150` and adopted through the controller API. Two local, unpublished hooks were added: one writes every decrypted controller reply and every outgoing inform to files, and one merges extra top-level fields into the inform payload.
+- Changes were made through the controller's classic REST API (`rest/networkconf`, `rest/device/<id>` with `port_overrides`, `cmd/devmgr`), and the `system_cfg` received after each change was diffed against the previous one.
+
+### Adoption
+
+- The first inform was answered with HTTP 404 (pending). After the adopt request, the controller sent `setparam` with a `mgmt_cfg` containing `authkey`, `cfgversion`, `use_aes_gcm=true`, `mgmt_url`, `stun_url`, `led_enabled`, `report_crash` and `capability=notif,fastapply-bg,notif-assoc-stat`. The device was connected about 20 seconds after its first inform.
+- The next `setparam` carried the full `system_cfg` (86 lines with default settings), plus `cfgversion` and `blocked_sta`. Besides `switch.*` it contains `unifi.*`, `system.*`, `users.*` (a device admin account with an MD5-crypt password hash), `netconf.*`, `dhcpc.*`, `resolv.*`, `route.*`, `sshd.*`, `ntpclient.*`, `vlan.status=disabled` and `bridge.status=disabled`. The agent should apply only the sections it maps, and should not create the `users.*` account.
+- The controller listed the device with six ports: `Port 1`-`Port 4` (media `GE`, `speed_caps` 1048623) and `SFP+ 1`, `SFP+ 2` (media `SFP+`, `speed_caps` 1048864). The port names came from the controller, not from the emulator profile, which names them `Port 5` and `Port 6`.
+
+### Capability bits decide what the controller offers
+
+With only `fw_caps` reported, the controller refused STP, jumbo frames and flow control (`api.err.SpanningTreeChangeNotAllowed`, `api.err.JumboFrameChangeNotAllowed`, `api.err.FlowControlChangeNotAllowed`) and left out the egress rate limit, even for a `US6XG150`. After re-adopting with this extra inform field, the controller stored it and provisioned STP keys on every port by default:
+
+```json
+"switch_caps": {"feature_caps": 532844, "vlan_caps": 7, "stp_caps": 11,
+                "max_mirror_sessions": 1, "max_aggregate_sessions": 3}
+```
+
+`feature_caps` 532844 sets `PORT_ISOLATION` (4), `STORM_CONTROL` (8), `EGRESS_RATE_LIMIT` (32), `STP` (64), `IGMP_SNOOPING` (256), `LACP` (8192) and `JUMBO` (524288), with the bit values from unifi-emu's `capability_bits.json`. `stp_caps` 11 is `BPDU_GUARD`, `AUTO_EDGE` and `PORT_COST`. Jumbo frames were still refused with the `JUMBO` bit set, so another gate applies to them. It was not found. The agent must report only capabilities it can apply. Clear `STORM_CONTROL` while the driver lacks it.
+
+### Captured switch configuration
+
+The `switch.*` section after these changes:
+
+- Two VLAN-only networks, 10 and 20.
+- Port 2: native VLAN 10, no tagged VLANs, isolation, STP off, mirrored by port 6.
+- Ports 3 and 4: a LAG with native VLAN 1 and VLANs 10 and 20 tagged.
+- Port 5: forced 10G full duplex, a 500 Mbit/s egress limit and a broadcast storm limit.
+- STP priority 4096.
+
+`switch.wevent.*` lines are left out of the block:
+
+```text
+switch.power_source.status=disabled
+switch.managementvlan=1
+switch.jumboframes=disabled
+switch.mtu=9216
+switch.stp.version=rstp
+switch.stp.priority=4096
+switch.stp.status=enabled
+switch.vlan.1.id=1
+switch.vlan.1.mode=untagged
+switch.vlan.1.status=enabled
+switch.vlan.2.id=10
+switch.vlan.2.mode=tagged
+switch.vlan.2.status=enabled
+switch.vlan.3.id=20
+switch.vlan.3.mode=tagged
+switch.vlan.3.status=enabled
+switch.routing_enabled=false
+switch.port.1.name=Port 1
+switch.port.1.stp.port_mode=enabled
+switch.port.1.stp.edge=auto
+switch.port.1.stp.bpdu_guard=disabled
+switch.port.1.opmode=switch
+switch.port.2.name=access-v10
+switch.port.2.stp.port_mode=disabled
+switch.port.2.opmode=switch
+switch.port.2.pvid=10
+switch.port.2.isolation=enabled
+switch.vlan.1.port.2.mode=exclude
+switch.vlan.2.port.2.mode=untagged
+switch.vlan.3.port.2.mode=exclude
+switch.port.3.name=lag-3-4
+switch.port.3.stp.port_mode=enabled
+switch.port.3.stp.edge=auto
+switch.port.3.stp.bpdu_guard=disabled
+switch.port.3.opmode=aggregate
+switch.port.3.lag=1
+switch.vlan.1.port.3.mode=untagged
+switch.vlan.2.port.3.mode=tagged
+switch.vlan.3.port.3.mode=tagged
+switch.port.4.name=Port 4
+switch.port.4.stp.port_mode=enabled
+switch.port.4.stp.edge=auto
+switch.port.4.stp.bpdu_guard=disabled
+switch.port.4.opmode=aggregate
+switch.port.4.lag=1
+switch.vlan.1.port.4.mode=untagged
+switch.vlan.2.port.4.mode=tagged
+switch.vlan.3.port.4.mode=tagged
+switch.port.5.name=fixed-10g
+switch.port.5.stormctrl.status=enabled
+switch.port.5.stormctrl.type=rate
+switch.port.5.stormctrl.bcast=100
+switch.port.5.autoneg=disabled
+switch.port.5.duplex=enabled
+switch.port.5.speed=10000
+switch.port.5.ld_mode=disabled
+switch.port.5.stp.port_mode=enabled
+switch.port.5.stp.edge=auto
+switch.port.5.stp.bpdu_guard=disabled
+switch.port.5.egress_rate_limit_kbps=500000
+switch.port.5.opmode=switch
+switch.port.6.name=mirror
+switch.port.6.stp.port_mode=enabled
+switch.port.6.stp.edge=auto
+switch.port.6.stp.bpdu_guard=disabled
+switch.port.6.opmode=mirror
+switch.port.6.mirror_port=2
+```
+
+Observations:
+
+- `switch.vlan.M` is a slot number, and `.id` is the VLAN ID. Ports without a VLAN override get no `switch.vlan.M.port.N.mode` lines and no `pvid`, so an absent key means the default membership. That default is presumably native VLAN 1 with every VLAN tagged, the controller's "auto" setting, but this is **UNVERIFIED**.
+- A port that had been overridden to native VLAN 10 with all tagged VLANs blocked became `pvid=10`, with `untagged` in VLAN 10 and `exclude` in every other VLAN.
+- A LAG is `opmode=aggregate` plus `lag=<n>` on each member. The REST call needs `aggregate_members`. No `switch.lag.<n>.lacp` key was sent, so whether the LAG should run LACP or be static is not stated in this capture.
+- A forced speed is `autoneg=disabled`, `duplex=enabled`, `speed=10000`, `ld_mode=disabled`.
+- Storm control is `stormctrl.status=enabled`, `stormctrl.type=rate` and `stormctrl.bcast=<rate>`. The egress limit is `egress_rate_limit_kbps=<kbps>`.
+- `forward: "disabled"` in a port override produced no key. The REST field that sends `switch.port.N.status=disabled` was not found.
+- The port name is `switch.port.N.name`. The firmware's UCI has nowhere to store it today, so it is a gap.
+
+### Commands
+
+- Locate arrives as `{"_type": "cmd", "cmd": "set-locate", ...}` on the next inform. Turning it off was not captured.
+- Restart arrives as `{"_type": "reboot", "reboot_type": "soft", ...}`.
+- Between changes the controller answers `noop` with `interval: 10`.
+
 ## Risks and unknowns
 
 - **Controller changes.** Obfuscated class names, capability gates and adoption details change between controller builds. Both AP projects track a specific Network version and keep "unhandled" ledgers for this reason. Expect maintenance on each controller release.
@@ -244,7 +375,7 @@ A procd service, `unifi-agent` or similar, with:
 ## Recommended starting point
 
 1. Read [unifi-openwrt `docs/internals.md`](https://github.com/antoniocosta/unifi-openwrt/blob/8e87294191/docs/internals.md) and its `internal/inform`, `internal/device` and `internal/translate` packages for the client and translator structure; then [openUF `PROTOCOL-VALIDATION.md`](https://github.com/yesrab/openUF/blob/3da571983b/PROTOCOL-VALIDATION.md) for the GCM gate, adoption, `switch.*` and `port_table`. Licences: GPL-2.0 and GPL-3.0; unifi-emu and pixiedust are MIT.
-2. Run unifi-emu against a test controller with `SIM_MODELS=US6XG150` and with `USWED76`, then decrypt the traffic with pixiedust. This gives the exact `mgmt_cfg`/`system_cfg` the controller sends to each candidate and shows how the UI renders a six-port switch, before any code runs on the switch.
-3. Click through every switch setting on that emulated device (port profile, native VLAN, tagged VLANs, disable, speed, LAG, mirror, STP, storm control, rate limit, LLDP-MED) and diff `system_cfg` after each, as openUF did for VLANs. That diff is the translator's specification.
+2. Done for `US6XG150`; see [Lab validation](#lab-validation-2026-11-20). Still open: port disable, jumbo frames, LACP versus static LAG, LLDP-MED, IGMP snooping, port profiles, and a run as `USWED76` for comparison.
+3. Write the translator against the captured keys, with each still-open item treated as unknown until it is captured.
 4. If a real Realtek UniFi switch is available (USW-Aggregation or USW-Pro-XG-8-PoE), capture from it: `mca-dump` and `mca-dump -g` over SSH, `cat /tmp/system.cfg` (path **UNVERIFIED**; find the running config), and a pcap of a fresh adoption with its authkey recovered by pixiedust. That is ground truth for `port_table`, `switch_caps` and `speed_caps` on 10G Realtek hardware.
 5. Only then write the agent, starting with inform, L3 adoption, read-only `port_table` and `apply '0'`, and add translator sections one feature at a time, each claimed only after it is tested on the switch.
