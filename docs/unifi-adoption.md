@@ -417,6 +417,16 @@ A third emulated device informed as `US8` (eight gigabit ports in the controller
 
 So a borrowed model with a different port count works. The agent must ignore `switch.port.N` entries beyond its physical ports. `US6XG150` needs no such handling, because its registry layout is the LG510S layout.
 
+### PoE
+
+`US6XG150` is a PoE switch in the controller's registry, and the LG510S has no PoE. A fourth emulated `US6XG150` reported `poe_caps: 0` and `port_poe: false` on every port. The other devices reported `poe_caps: 7` on ports 1-4.
+
+- The controller adopted it normally and stored `poe_caps: 0` on every port. It raised no alarm, no event and no log line about the mismatch, and the device was not marked unsupported or incompatible.
+- No PoE key reached `system_cfg` on either device, not even after a `poe_mode` override of `off` or `auto`. The only power-related key sent was `switch.power_source.status=disabled`. The controller's config generator has the strings `switch.poe`, `power_budget` and `power_source_ctrl`, so PoE configuration probably also depends on a power budget that the emulator does not report. This is **UNVERIFIED**.
+- Whether the web UI hides the PoE controls for ports with `poe_caps: 0` was not checked.
+
+So the agent should report `poe_caps: 0` and `port_poe: false` on every port, report no power budget, and ignore any `switch.poe*` or `switch.port.N.poe*` key it receives.
+
 ### Firmware upgrades
 
 All three emulated devices reported firmware 7.4.1.16850 and were marked `upgradable` to 7.6.11.17272. A manual upgrade sent:
