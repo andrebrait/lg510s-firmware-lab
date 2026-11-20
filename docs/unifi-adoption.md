@@ -264,7 +264,7 @@ With only `fw_caps` reported, the controller refused STP, jumbo frames and flow 
                 "max_mirror_sessions": 1, "max_aggregate_sessions": 3}
 ```
 
-`feature_caps` 532844 sets `PORT_ISOLATION` (4), `STORM_CONTROL` (8), `EGRESS_RATE_LIMIT` (32), `STP` (64), `IGMP_SNOOPING` (256), `LACP` (8192) and `JUMBO` (524288), with the bit values from unifi-emu's `capability_bits.json`. `stp_caps` 11 is `BPDU_GUARD`, `AUTO_EDGE` and `PORT_COST`. Jumbo frames were still refused with the `JUMBO` bit set, so another gate applies to them. It was not found. The agent must report only capabilities it can apply. Clear `STORM_CONTROL` while the driver lacks it.
+`feature_caps` 532844 sets `PORT_ISOLATION` (4), `STORM_CONTROL` (8), `EGRESS_RATE_LIMIT` (32), `STP` (64), `IGMP_SNOOPING` (256), `LACP` (8192) and `JUMBO` (524288), with the bit values from unifi-emu's `capability_bits.json`. `stp_caps` 11 is `BPDU_GUARD`, `AUTO_EDGE` and `PORT_COST`. Jumbo frames and flow control were still refused on the device even with the `JUMBO` bit set. In 10.6 they are site-wide settings (see [Site-wide switch settings](#site-wide-switch-settings)). The agent must report only capabilities it can apply. Clear `STORM_CONTROL` while the driver lacks it.
 
 ### Captured switch configuration
 
@@ -355,8 +355,78 @@ Observations:
 - A LAG is `opmode=aggregate` plus `lag=<n>` on each member. The REST call needs `aggregate_members`. No `switch.lag.<n>.lacp` key was sent, so whether the LAG should run LACP or be static is not stated in this capture.
 - A forced speed is `autoneg=disabled`, `duplex=enabled`, `speed=10000`, `ld_mode=disabled`.
 - Storm control is `stormctrl.status=enabled`, `stormctrl.type=rate` and `stormctrl.bcast=<rate>`. The egress limit is `egress_rate_limit_kbps=<kbps>`.
-- `forward: "disabled"` in a port override produced no key. The REST field that sends `switch.port.N.status=disabled` was not found.
+- A port is disabled (`switch.port.N.status=disabled`) only when its override has `forward: "disabled"` together with an empty `native_networkconf_id` and `tagged_vlan_mgmt: "block_all"`. `forward: "disabled"` alone produced no key.
 - The port name is `switch.port.N.name`. The firmware's UCI has nowhere to store it today, so it is a gap.
+
+### Site-wide switch settings
+
+Several switch settings live in site settings, not on the device: `rest/setting/global_switch` and `rest/setting/igmp_snooping`. They apply to every switch on the site.
+
+| Site setting | Keys sent |
+|---|---|
+| `global_switch.jumboframe_enabled` | `switch.jumboframes=enabled`. `switch.mtu=9216` is always sent. |
+| `global_switch.flowctrl_enabled` | `switch.port.N.flowctrl=enabled` on every port. A per-port `flow_control_enabled: false` removes that port's line. |
+| `global_switch.stp_version` | `switch.stp.version` (`stp` or `rstp`). The priority (`switch.stp.priority`) is per device. |
+| `global_switch.dhcp_snoop` (default on) | `switch.dhcp_snoop.status=enabled`, with `DHCP_SNOOPING` set. |
+| `global_switch.dot1x_portctrl_enabled`, `radiusprofile_id`, `dot1x_fallback_networkconf_id` | `switch.dot1x.status=enabled`, `switch.dot1x.dynvlan`, `switch.dot1x.guest_vlan=<vid>`, `switch.radius.{auth,acct}.N.{ip,port,secret}`, and `switch.port.N.dot1x.mode=force_authorized` on every port. The RADIUS secret is sent in plain text. |
+| `global_switch.link_debounce` | `switch.port.N.link_debounce=<ms>` on every port, with `feature_caps2` `LINK_DEBOUNCE` (1) set. |
+| `igmp_snooping` (`enabled`, `network_ids`, `switches`, querier fields) | Per VLAN slot: `switch.vlan.M.igmp_snooping=true`, `igmp_fastleave`, `igmp_maxresponse=10`, `igmp_mcrtrexpiretime=180`, `igmp_groupmembership=260`, `igmp_supression`, `igmp_querier_status`, `igmp_querier`. Globally: `switch.multicast.forward_unk_mcast_router_ports`, `switch.multicast.flood_known_protocols`. Setting `igmp_snooping` on the network document alone sent nothing. |
+| Network `dhcpguard_enabled`, `dhcpd_ip_1`, `dhcpd_ip_2` | `switch.dhcp_guard.N.{server,vlan,status}`, one entry per trusted server. |
+
+### Keys gated by further capability bits
+
+A second emulated `US6XG150` reported more capability bits:
+- `feature_caps` 71115774, which adds `DOT1X`, `LLDP_MED`, `DHCP_SNOOPING`, `PORT_SECURITY`, `FORWARD_ERROR_CORRECTION`, `BRIDGE_VLAN_FILTER`, `KEEPALIVE_LOOP_PROTECTION`, `WEVENT_SNOOPING` and `IGMP_SNOOPING_ADVANCED`.
+- `feature_caps2` 1, `storm_control_caps` 1 and `igmp_snoop_caps` 15.
+- `port_caps` 1 (`EEE`) on every port.
+
+With those set, the controller also sent these keys, which it had left out for the first device:
+
+```text
+switch.port.N.eee=enabled|disabled                  # port_caps EEE
+switch.port.N.keepalive=enabled|disabled            # KEEPALIVE_LOOP_PROTECTION
+switch.port.N.port-security=enabled|disabled        # PORT_SECURITY
+switch.port.N.port-security.mac.K=<mac>
+switch.port.N.lldpmed.opmode=enabled|disabled       # LLDP_MED
+switch.port.N.lldpmed.topology_notify=enabled|disabled
+switch.port.N.link_debounce=<ms>                    # feature_caps2 LINK_DEBOUNCE
+switch.port.N.stormctrl.type=level                  # storm_control_caps IN_PERCENTAGE
+switch.port.N.stormctrl.{bcast,mcast,ucast}=<percent>
+switch.port.N.dot1x.mode=force_authorized|mac_based|...   # DOT1X
+switch.port.N.dot1x.idle_timeout=<s>
+```
+
+Without `IN_PERCENTAGE`, a `level` storm-control override was sent as `type=rate`, with 100 for each traffic type that had no rate set. A `voice_networkconf_id` produced no key.
+
+### How the controller builds the configuration
+
+- The controller's REST field schemas are in `api/fields/*.json` inside `lib/internal/internal-dependencies.jar`. They list every field with a validating regular expression. `Device.json` defines `port_overrides`: `forward` is `all|native|customize|disabled`, `op_mode` is `switch|mirror|aggregate|routed|routed_aggregate`, `speed` runs from 10 to 100000, and storm-control rates and levels have fixed ranges. `PortConf.json` (port profiles), `NetworkConf.json` and `Setting.json` are alongside it. This is the most direct reference for what the controller can ask for.
+- Port profiles are flattened. Assigning a `portconf_id` to a port, or editing the profile later, sends the profile's settings as that port's ordinary `switch.port.N.*` and VLAN keys. The device never sees a profile.
+- A VLAN that no port carries is dropped from `switch.vlan.*`, and the slot numbers of the remaining VLANs can change. The agent must key VLANs by `.id`, never by slot.
+- A device `PUT` with `port_overrides` replaces the whole list. Ports left out return to defaults.
+- The fields the controller reads from a reported `port_table` entry are listed in one class's constant pool. They include `port_idx`, `up`, `speed`, `autoneg`, `full_duplex`, `media`, `name`, `is_uplink`, `stp_state`, `mirror_port_idx`, `lag_idx`, `aggregate_members`, `port_security_*` and `sfp_*` (vendor, part, serial, temperature, tx/rx power). In 10.6.109 that class is `com/ubnt/i/b/t/UQKIrjV`; the name is obfuscated and changes between builds.
+
+### Reporting a different port layout under a borrowed model
+
+A third emulated device informed as `US8` (eight gigabit ports in the controller's registry), but reported the LG510S layout in `port_table`: four `GE` ports and two `SFP+` ports, with 10G speeds and 10G `speed_caps`. unifi-emu's per-device `ports` setting and unifi-stubd's per-device profiles do the same thing. Results:
+
+- The controller's device record and port list followed the reported `port_table`: six ports, `SFP+` media on ports 5 and 6, and 10G link speeds.
+- `system_cfg` still followed the registry and listed eight ports. The names came from the controller (`Port 5`, `Port 6`). The reported names were ignored.
+- A forced 10G speed on port 5 of the `US8` was accepted and sent (`switch.port.5.speed=10000`). The controller did not check it against the model.
+- An override on port 7, which does not exist on the device, was accepted and sent.
+
+So a borrowed model with a different port count works. The agent must ignore `switch.port.N` entries beyond its physical ports. `US6XG150` needs no such handling, because its registry layout is the LG510S layout.
+
+### Firmware upgrades
+
+All three emulated devices reported firmware 7.4.1.16850 and were marked `upgradable` to 7.6.11.17272. A manual upgrade sent:
+
+```json
+{"_type": "upgrade", "version": "7.6.11.17272", "md5sum": "...",
+ "url": "https://fw-download.ubnt.com/data/unifi-firmware/<id>-US8-7.6.11-<uuid>.bin"}
+```
+
+The agent must never download or apply this file. If it ignores the message, the controller keeps offering the upgrade, and the site's nightly auto-upgrade (`mgmt.auto_upgrade`, on by default) retries it. Reporting a version at or above the controller's latest for the impersonated model probably avoids the offer, but this was not tested.
 
 ### Commands
 
@@ -375,7 +445,7 @@ Observations:
 ## Recommended starting point
 
 1. Read [unifi-openwrt `docs/internals.md`](https://github.com/antoniocosta/unifi-openwrt/blob/8e87294191/docs/internals.md) and its `internal/inform`, `internal/device` and `internal/translate` packages for the client and translator structure; then [openUF `PROTOCOL-VALIDATION.md`](https://github.com/yesrab/openUF/blob/3da571983b/PROTOCOL-VALIDATION.md) for the GCM gate, adoption, `switch.*` and `port_table`. Licences: GPL-2.0 and GPL-3.0; unifi-emu and pixiedust are MIT.
-2. Done for `US6XG150`; see [Lab validation](#lab-validation-2026-11-20). Still open: port disable, jumbo frames, LACP versus static LAG, LLDP-MED, IGMP snooping, port profiles, and a run as `USWED76` for comparison.
+2. Done for `US6XG150`, and for a borrowed `US8` with the LG510S port layout; see [Lab validation](#lab-validation-2026-11-20). Still open: LACP versus static LAG (no `lacp` key was ever sent), the voice VLAN, how the reported version affects upgrade offers, and a run as `USWED76`.
 3. Write the translator against the captured keys, with each still-open item treated as unknown until it is captured.
 4. If a real Realtek UniFi switch is available (USW-Aggregation or USW-Pro-XG-8-PoE), capture from it: `mca-dump` and `mca-dump -g` over SSH, `cat /tmp/system.cfg` (path **UNVERIFIED**; find the running config), and a pcap of a fresh adoption with its authkey recovered by pixiedust. That is ground truth for `port_table`, `switch_caps` and `speed_caps` on 10G Realtek hardware.
 5. Only then write the agent, starting with inform, L3 adoption, read-only `port_table` and `apply '0'`, and add translator sections one feature at a time, each claimed only after it is tested on the switch.
