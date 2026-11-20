@@ -430,6 +430,35 @@ So a borrowed model with a different port count works. The agent must ignore `sw
 
 So the agent should report `poe_caps: 0` and `port_poe: false` on every port, report no power budget, and ignore any `switch.poe*` or `switch.port.N.poe*` key it receives.
 
+### Link speeds and SFP+ modules
+
+A fifth emulated `US6XG150` reported the following ports, each with `poe_caps: 0`:
+
+| Port | Reported link | Reported `speed_caps` |
+|---|---|---|
+| 1-4 | up at 10000, 2500, 5000 and 1000 Mbit/s | 1049064: 100M, 1G, 2.5G, 5G and 10G full duplex, plus bit 1048576 |
+| 5 (SFP+) | up at 10000, autonegotiation off | 1048864: 1G and 10G |
+| 6 (SFP+) | down | 1048864: 1G and 10G |
+
+`speed_caps` 1048576 is present on every real profile; its meaning was not identified. Port 5 reported a module with these fields:
+
+```json
+"sfp_found": true, "sfp_eeprom": true, "sfp_rxfault": false, "sfp_txfault": false,
+"sfp_vendor": "FS", "sfp_part": "SFP-10GSR-85", "sfp_rev": "A",
+"sfp_serial": "F2030812345", "sfp_compliance": "10G Base-SR",
+"sfp_temperature": "38.50", "sfp_voltage": "3.30", "sfp_current": "6.20",
+"sfp_txpower": "-2.10", "sfp_rxpower": "-3.40"
+```
+
+Port 6 reported a module with `sfp_rxfault: true`. The field names and types (booleans, and strings for every measurement) come from the controller's port model class. The value formats and units are a guess, and the UI accepted them.
+
+What the web UI showed:
+
+- **Speeds.** The Port Manager showed 10 GbE, 2.5 GbE, 5 GbE and GbE on ports 1-4, each with its own colour and legend entry, and 10 GbE on port 5. The Link Speed filter counted them. The down port showed "Auto".
+- **Speed choices.** With autonegotiation off, the speed list held exactly the speeds in `speed_caps`. Copper ports offered 10 GbE, 5 GbE, 2.5 GbE, GbE and 100 MbE, all full duplex. The SFP+ port offered 10 GbE and GbE. The agent's `speed_caps` therefore decide what an admin can pick, so they must match what the RTL8264B and the SFP+ cages actually support.
+- **SFP tab.** Each module's vendor, serial, part number, compliance, temperature (`38.5℃`) and output power (`-2.1 dBm`) were shown. The power fields are therefore read as dBm. The agent can fill these from `ethtool -m` on the SFP ports.
+- **Faults.** `sfp_rxfault: true` raised a critical "Port 6: Receive SFP Signal Loss" alert, gave port 6 an anomaly score of 70, and put a warning icon on the device. Report a fault only when the module really asserts LOS.
+
 ### Firmware upgrades
 
 All three emulated devices reported firmware 7.4.1.16850 and were marked `upgradable` to 7.6.11.17272. A manual upgrade sent:
