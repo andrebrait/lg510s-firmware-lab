@@ -68,7 +68,7 @@ The device POSTs a binary frame to `http://<controller>:8080/inform` and the con
 | 36 | 4 | Payload length, including the 16-byte GCM tag |
 
 - **Encryption.** AES-128-CBC with PKCS#7, or AES-128-GCM with a 16-byte nonce and the whole 40-byte header as additional data. The key is the hex-decoded 32-digit `authkey`. Before adoption it is the factory key `ba86f2bbe107c7c57eb5f2690775c712`, MD5 of `ubnt` ([TNBU `InformPacket.cs`](https://github.com/JohnKiller/TNBU/blob/ba2c22f4bd/TNBU.Core/Models/InformPacket.cs) line 16). Compression is zlib before encryption; snappy is legacy ([jeffreykog README](https://github.com/jeffreykog/unifi-inform-protocol/blob/63d75a085c/README.md) lines 61–74).
-- **GCM is mandatory for provisioning.** On Network 10.4.57 the controller will not provision a device until it has received a genuinely GCM-encrypted inform; the `x_aes_gcm` flag is set only from the wire flag, and a GCM→CBC downgrade is rejected afterwards. A device stuck here shows a new `cfgversion` on every cycle and "Adopting" forever ([openUF `PROTOCOL-VALIDATION.md`](https://github.com/yesrab/openUF/blob/3da571983b/PROTOCOL-VALIDATION.md) lines 529–565). The pixiedust USW capture shows the controller sending `use_aes_gcm=true` in `mgmt_cfg`.
+- **GCM is mandatory for provisioning.** On Network 10.4.57 the controller will not provision a device until it has received a genuinely GCM-encrypted inform; the `x_aes_gcm` flag is set only from the wire flag, and a GCM→CBC downgrade is rejected afterwards. A device stuck here shows a new `cfgversion` on every cycle and "Adopting" forever ([openUF `PROTOCOL-VALIDATION.md`](https://github.com/yesrab/openUF/blob/3da571983b/PROTOCOL-VALIDATION.md) lines 529–565). The pixiedust USW capture shows the controller sending `use_aes_gcm=true` in `mgmt_cfg`. A different failure looks similar: a GCM device that never echoes the `cfgversion` it was sent gets the same `cfgversion` and full `setparam` again about every 10 seconds, never a `noop`. It stays in `stat/device` state 5 (provisioning) with `known_cfgversion` `"0"` (RTLPlayground lab, 10.6.109).
 - **Inform URL.** The reported `inform_url` must have an IP-literal host; a host name is rejected with `invalid inform_ip` ([unifi-emu `docs/PROTOCOL.md`](https://github.com/jamesbraid/unifi-emu/blob/a538889cce/docs/PROTOCOL.md) "Three things that trip up an implementer"). HTTP 404 with an empty body to a pending device is normal.
 - **Cadence.** Keep informing; the controller can only answer the device's next inform. `noop` carries `interval`; after a `cmd` the device informs again immediately ([openUF](https://github.com/yesrab/openUF/blob/3da571983b/PROTOCOL-VALIDATION.md) lines 606–638).
 
@@ -76,7 +76,7 @@ The device POSTs a binary frame to `http://<controller>:8080/inform` and the con
 
 Both paths are seen on Network 10.6 and a device should support both ([unifi-openwrt `docs/internals.md`](https://github.com/antoniocosta/unifi-openwrt/blob/8e87294191/docs/internals.md) "Adoption"; [openUF](https://github.com/yesrab/openUF/blob/3da571983b/PROTOCOL-VALIDATION.md) lines 566–605):
 
-1. **L3, inform only.** The device is configured with the controller's inform URL and informs with the factory key, `default: true`, `state: 1`. After the operator clicks Adopt, a `setparam` delivers `mgmt_cfg` with `authkey=…`, `cfgversion=…`, `use_aes_gcm=true`, `inform_url=…`, `mgmt_url=…`, `stun_url=…`. The controller logs "discovered via L3 inform, skip SSH adoption". Accept a key from `mgmt_cfg` only while still on the factory key.
+1. **L3, inform only.** The device is configured with the controller's inform URL and informs with the factory key, `default: true`, `state: 1`. After the operator clicks Adopt, a `setparam` delivers `mgmt_cfg` with `authkey=…`, `cfgversion=…`, `use_aes_gcm=true`, `mgmt_url=…`, `stun_url=…`. Network 10.6.109 sent no `inform_url` in `mgmt_cfg` in either lab. The controller logs "discovered via L3 inform, skip SSH adoption". Accept a key from `mgmt_cfg` only while still on the factory key.
 2. **L2, SSH.** For a device found by broadcast discovery, the controller SSHes in as `ubnt`/`ubnt` (or the site's device credentials once set) and runs `syswrapper.sh set-adopt <inform-url> <authkey>`. Its SSH client offers only RSA host keys (`ssh-rsa`, `rsa-sha2-*`). unifi-openwrt answers with a dedicated SSH responder on a separate port advertised in the inform's `sshd_port`; openUF adds a locked-down `ubnt` account to Dropbear and had to register its forced shell in `/etc/shells`.
 
 Some builds deliver the key with `{"_type":"cmd","cmd":"set-adopt","key":…,"uri":…}` instead ([unifi-emu](https://github.com/jamesbraid/unifi-emu/blob/a538889cce/docs/PROTOCOL.md) "The two key-delivery channels").
@@ -85,11 +85,11 @@ Some builds deliver the key with `{"_type":"cmd","cmd":"set-adopt","key":…,"ur
 
 ### Replies
 
-Per openUF's reading of `InformServlet` (10.4.57): `noop`, `setparam`, `cmd`, `upgrade`, `reboot`, `setdefault` ([openUF](https://github.com/yesrab/openUF/blob/3da571983b/PROTOCOL-VALIDATION.md) lines 606–638). unifi-emu also describes a `setstate` reply carrying `port_table`/`port_overrides`; openUF's servlet reading does not list it. **UNVERIFIED** which is right for USW on 10.6; capture it.
+Per openUF's reading of `InformServlet` (10.4.57): `noop`, `setparam`, `cmd`, `upgrade`, `reboot`, `setdefault` ([openUF](https://github.com/yesrab/openUF/blob/3da571983b/PROTOCOL-VALIDATION.md) lines 606–638). unifi-emu also describes a `setstate` reply carrying `port_table`/`port_overrides`; openUF's servlet reading does not list it. Not seen on 10.6.109 for switches: 1,028 captured replies in this lab and the RTLPlayground lab's capture held no `setstate`. Port overrides arrive only in `system_cfg`.
 
 | Reply | Meaning for this agent |
 |---|---|
-| `setparam` | `mgmt_cfg` (key, cfgversion, GCM, inform URL) and `system_cfg` (the whole device configuration) |
+| `setparam` | `mgmt_cfg` (key, cfgversion, GCM, management and STUN URLs) and `system_cfg` (the whole device configuration) |
 | `cmd` `set-locate` / `unset-locate` | Blink an LED |
 | `reboot` | Reboot (`reboot_type` soft) |
 | `setdefault` | Operator clicked Remove: forget the controller and return to pending. Do **not** factory-reset OpenWrt |
@@ -352,10 +352,10 @@ Observations:
 
 - `switch.vlan.M` is a slot number, and `.id` is the VLAN ID. Ports without a VLAN override get no `switch.vlan.M.port.N.mode` lines and no `pvid`, so an absent key means the default membership. That default is presumably native VLAN 1 with every VLAN tagged, the controller's "auto" setting, but this is **UNVERIFIED**.
 - A port that had been overridden to native VLAN 10 with all tagged VLANs blocked became `pvid=10`, with `untagged` in VLAN 10 and `exclude` in every other VLAN.
-- A LAG is `opmode=aggregate` plus `lag=<n>` on each member. The REST call needs `aggregate_members`. No `switch.lag.<n>.lacp` key was sent, so whether the LAG should run LACP or be static is not stated in this capture.
+- A LAG is `opmode=aggregate` plus `lag=<n>` on each member. The REST call needs `aggregate_members`. No `switch.lag.<n>.lacp` key was sent in either lab, and the controller's REST schemas have no LACP field. Ubiquiti's [LAG FAQ](https://help.ui.com/hc/en-us/articles/360007279753) says UniFi switches support only LACP (802.3ad), not static LAGs, so `opmode=aggregate` means an LACP bond. The controller reads per-port `lacp_state` back from `port_table` (string in its device-manager classes).
 - A forced speed is `autoneg=disabled`, `duplex=enabled`, `speed=10000`, `ld_mode=disabled`.
 - Storm control is `stormctrl.status=enabled`, `stormctrl.type=rate` and `stormctrl.bcast=<rate>`. The egress limit is `egress_rate_limit_kbps=<kbps>`.
-- A port is disabled (`switch.port.N.status=disabled`) only when its override has `forward: "disabled"` together with an empty `native_networkconf_id` and `tagged_vlan_mgmt: "block_all"`. `forward: "disabled"` alone produced no key.
+- A port is disabled (`switch.port.N.status=disabled`) only when its override has all three of `forward: "disabled"`, an empty `native_networkconf_id` and `tagged_vlan_mgmt: "block_all"`. This was isolated by testing subsets. With `forward: "disabled"` and an empty native network only, the controller stored `forward: "customize"` and sent the port as tagged in every VLAN. With `forward` and `block_all` only, the port stayed in VLAN 1. `setting_preference` is not needed.
 - The port name is `switch.port.N.name`. The firmware's UCI has nowhere to store it today, so it is a gap.
 
 ### Site-wide switch settings
@@ -370,7 +370,7 @@ Several switch settings live in site settings, not on the device: `rest/setting/
 | `global_switch.dhcp_snoop` (default on) | `switch.dhcp_snoop.status=enabled`, with `DHCP_SNOOPING` set. |
 | `global_switch.dot1x_portctrl_enabled`, `radiusprofile_id`, `dot1x_fallback_networkconf_id` | `switch.dot1x.status=enabled`, `switch.dot1x.dynvlan`, `switch.dot1x.guest_vlan=<vid>`, `switch.radius.{auth,acct}.N.{ip,port,secret}`, and `switch.port.N.dot1x.mode=force_authorized` on every port. The RADIUS secret is sent in plain text. |
 | `global_switch.link_debounce` | `switch.port.N.link_debounce=<ms>` on every port, with `feature_caps2` `LINK_DEBOUNCE` (1) set. |
-| `igmp_snooping` (`enabled`, `network_ids`, `switches`, querier fields) | Per VLAN slot: `switch.vlan.M.igmp_snooping=true`, `igmp_fastleave`, `igmp_maxresponse=10`, `igmp_mcrtrexpiretime=180`, `igmp_groupmembership=260`, `igmp_supression`, `igmp_querier_status`, `igmp_querier`. Globally: `switch.multicast.forward_unk_mcast_router_ports`, `switch.multicast.flood_known_protocols`. Setting `igmp_snooping` on the network document alone sent nothing. |
+| `igmp_snooping` (`enabled`, `network_ids`, `switches`, querier fields) | Per VLAN slot: `switch.vlan.M.igmp_snooping=true`, `igmp_fastleave`, `igmp_maxresponse=10`, `igmp_mcrtrexpiretime=180`, `igmp_groupmembership=260`, `igmp_supression`, `igmp_querier_status`, `igmp_querier`. Globally: `switch.multicast.forward_unk_mcast_router_ports`, `switch.multicast.flood_known_protocols`. Setting `igmp_snooping` on the network document alone sent nothing. `fastleave_for_network_ids` did not change `igmp_fastleave`, which stayed `false` in both labs. |
 | Network `dhcpguard_enabled`, `dhcpd_ip_1`, `dhcpd_ip_2` | `switch.dhcp_guard.N.{server,vlan,status}`, one entry per trusted server. |
 
 ### Keys gated by further capability bits
@@ -436,11 +436,11 @@ A fifth emulated `US6XG150` reported the following ports, each with `poe_caps: 0
 
 | Port | Reported link | Reported `speed_caps` |
 |---|---|---|
-| 1-4 | up at 10000, 2500, 5000 and 1000 Mbit/s | 1049064: 100M, 1G, 2.5G, 5G and 10G full duplex, plus bit 1048576 |
+| 1-4 | up at 10000, 2500, 5000 and 1000 Mbit/s | 1049064: 100M, 1G, 2.5G, 5G and 10G full duplex, plus autonegotiation (1048576) |
 | 5 (SFP+) | up at 10000, autonegotiation off | 1048864: 1G and 10G |
 | 6 (SFP+) | down | 1048864: 1G and 10G |
 
-`speed_caps` 1048576 is present on every real profile; its meaning was not identified. Port 5 reported a module with these fields:
+`speed_caps` bit 1048576 is autonegotiation, per unifi-emu's `capability_bits.json`. Port 5 reported a module with these fields:
 
 ```json
 "sfp_found": true, "sfp_eeprom": true, "sfp_rxfault": false, "sfp_txfault": false,
