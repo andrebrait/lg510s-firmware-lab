@@ -412,7 +412,7 @@ A third emulated device informed as `US8` (eight gigabit ports in the controller
 
 - The controller's device record and port list followed the reported `port_table`: six ports, `SFP+` media on ports 5 and 6, and 10G link speeds.
 - `system_cfg` still followed the registry and listed eight ports. The names came from the controller (`Port 5`, `Port 6`). The reported names were ignored.
-- A forced 10G speed on port 5 of the `US8` was accepted and sent (`switch.port.5.speed=10000`). The controller did not check it against the model.
+- A forced 10G speed on port 5 of the `US8` was accepted and sent (`switch.port.5.speed=10000`). The controller checks forced speeds against the port's reported `speed_caps`, which allowed 10G here, and not against the model. The RTLPlayground lab saw speeds outside `speed_caps` refused with `api.err.InvalidInterfaceSpeedDuplex`.
 - An override on port 7, which does not exist on the device, was accepted and sent.
 
 So a borrowed model with a different port count works. The agent must ignore `switch.port.N` entries beyond its physical ports. `US6XG150` needs no such handling, because its registry layout is the LG510S layout.
@@ -422,7 +422,7 @@ So a borrowed model with a different port count works. The agent must ignore `sw
 `US6XG150` is a PoE switch in the controller's registry, and the LG510S has no PoE. A fourth emulated `US6XG150` reported `poe_caps: 0` and `port_poe: false` on every port. The other devices reported `poe_caps: 7` on ports 1-4.
 
 - The controller adopted it normally and stored `poe_caps: 0` on every port. It raised no alarm, no event and no log line about the mismatch, and the device was not marked unsupported or incompatible.
-- No PoE key reached `system_cfg` on either device, not even after a `poe_mode` override of `off` or `auto`. The only power-related key sent was `switch.power_source.status=disabled`. The controller's config generator has the strings `switch.poe`, `power_budget` and `power_source_ctrl`, so PoE configuration probably also depends on a power budget that the emulator does not report. This is **UNVERIFIED**.
+- The PoE-reporting devices in the first runs sent only `poe_caps: 7`, and no PoE key reached their `system_cfg`, not even after a `poe_mode` override. A later device reported `poe_caps: 7` together with `port_poe: true`, `poe_enable`, `poe_mode: "auto"` and the `poe_good`/`poe_power`/`poe_voltage`/`poe_current`/`poe_class` fields on ports 1-4. It received `switch.port.N.poe=auto` on those four ports. So PoE keys depend on `port_poe` and the other per-port PoE fields, not on `poe_caps` alone. The RTLPlayground lab got the same result, and also captured the other values: `poe_mode=off` sends `poe=shutdown`, and `pasv24` sends `poe=passive24v`.
 - The web UI hides PoE for that device. Compared with a `US6XG150` that reports `poe_caps: 7`:
   - The Port Manager has no PoE Mode column and no PoE legend, and the PoE filter reads "None (6)".
   - The per-port settings panel has no PoE selector. The PoE device offers Off, PoE+ and 24V Passive there.
