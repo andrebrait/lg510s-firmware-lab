@@ -47,9 +47,9 @@ git clone https://github.com/openwrt/packages.git lg510s-packages
 git -C lg510s-luci fetch https://github.com/andrebrait/luci.git '+refs/heads/*:refs/remotes/fork/*'
 git -C lg510s-packages fetch https://github.com/andrebrait/packages.git '+refs/heads/*:refs/remotes/fork/*'
 git -C lg510s-luci checkout -b build-lg510s 85c7f60405
-git -C lg510s-luci cherry-pick 4db571b c29b450 a095d24 08d8827 0092264 06752a4 90598ed 611d35e 6e3c559 74701ab abaf6cd
+git -C lg510s-luci cherry-pick 4db571b c29b450 a095d24 08d8827 0092264 06752a4 90598ed 611d35e 6e3c559 74701ab abaf6cd 224b1b5ab7 854e5e1987 da164c59e0 dca9441e25 7a57646250 caaa1b3e2f 26611c92b4
 git -C lg510s-packages checkout -b build-lg510s 00772801
-git -C lg510s-packages cherry-pick 3a6f1a1
+git -C lg510s-packages cherry-pick 3a6f1a1 eedfed5e6e 461a8364d4 741da735a6 522c2ebc1c e6e194bc63 36d367f747 bd06a15fa2 1e79e47052 80feb8196a
 cd openwrt-lg510s
 git checkout -b build-lg510s 593608fbda
 git apply --include='target/linux/realtek/base-files/**' "$LAB/openwrt/0001-realtek-rtl930x-add-Lianguo-LG510S-4T2XS.patch"
@@ -75,6 +75,8 @@ CONFIG_PACKAGE_libustream-mbedtls=y
 CONFIG_PACKAGE_px5g-mbedtls=y
 CONFIG_PACKAGE_kmod-bonding=y
 CONFIG_PACKAGE_luci-app-switchdev=y
+CONFIG_PACKAGE_unifi-agent=y
+CONFIG_PACKAGE_luci-app-unifi-agent=y
 CONFIG_PACKAGE_luci-app-statistics=y
 CONFIG_PACKAGE_collectd-mod-thermal=y
 CONFIG_PACKAGE_collectd-mod-sensors=y
