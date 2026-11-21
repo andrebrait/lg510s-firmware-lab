@@ -38,7 +38,7 @@ This takes about 30 minutes, plus build time if you build the image yourself. Yo
 7. **Log in.** Open the address in a browser; HTTP redirects to HTTPS with a self-signed certificate. Log in as `root` with an empty password.
 8. **Secure and name it.** Set a root password and add your SSH public key under System -> Administration. Set the hostname, timezone and NTP server under System -> System.
 9. **Optional: give it a static address.** Under Network -> Interfaces -> lan, change the protocol to static. Apply it with a reboot rather than Save & Apply; see [known issues](docs/openwrt.md#known-issues-and-cautions).
-10. **Optional: turn on services.** LLDP (Services -> LLDPd) and SNMP (Services -> SNMP) are off by default.
+10. **Optional: turn on services.** LLDP (Services -> LLDPd) and SNMP (Services -> SNMP) are off by default. The Prometheus exporter listens on port 9100 of the loopback interface only; to scrape it from the network, run `uci set prometheus-node-exporter-lua.main.listen_interface=lan && uci commit && service prometheus-node-exporter-lua restart`.
 
 Later updates use the `...-squashfs-sysupgrade.bin` image and keep the configuration; see [Updating](#updating). If anything goes wrong, see [Recovery](#recovery).
 
@@ -57,6 +57,7 @@ Every port, the port LEDs, the system LED, the reset button and the SFP+ module 
 - Network -> Switch features: the switch's MAC address table with static entries, port mirroring, and per-port ingress and egress rate limits, all offloaded to the switch chip.
 - CPU and per-port temperatures on Status -> Overview and Status -> Ports, and temperature, load and memory graphs under Statistics -> Graphs.
 - UniFi controller adoption (Services -> UniFi controller), off until enabled: the switch is shown as a UniFi `US6XG150`, reports its status, and takes its port, VLAN, LACP, STP and IGMP settings from the controller once `apply` is turned on (it only logs them by default). Lab-tested only; see [UniFi controller adoption](docs/unifi-adoption.md).
+- A Prometheus exporter (`prometheus-node-exporter-lua`) with per-port counters (`node_network_*`, `node_ethtool_*`) and temperatures (`node_hwmon_*`, `node_thermal_*`), listening on loopback until configured.
 - LLDP (`lldpd`) and SNMP (`snmpd`), both off until enabled, RSTP (`ustp`), link aggregation (`kmod-bonding`) and HTTPS for LuCI.
 
 See [OpenWrt on the LG510S-4T2XS](docs/openwrt.md) for the test results, and the [feature gap](docs/openwrt-feature-gap.md) for what the stock firmware did that this image does not do yet. Open features are tracked as issues.
