@@ -47,7 +47,7 @@ git clone https://github.com/openwrt/packages.git lg510s-packages
 git -C lg510s-luci fetch https://github.com/andrebrait/luci.git '+refs/heads/*:refs/remotes/fork/*'
 git -C lg510s-packages fetch https://github.com/andrebrait/packages.git '+refs/heads/*:refs/remotes/fork/*'
 git -C lg510s-luci checkout -b build-lg510s 1da78bdbce
-git -C lg510s-luci cherry-pick 4db571b c29b450 a095d24 08d8827 0092264 06752a4 90598ed 611d35e 6e3c559 74701ab abaf6cd 224b1b5ab7 854e5e1987 da164c59e0 dca9441e25 7a57646250 caaa1b3e2f 26611c92b4 a7b4c2b414 e45e3f1f48 fbeb13e8bc dd44c7bfb1 7a79a0f558
+git -C lg510s-luci cherry-pick 4db571b c29b450 a095d24 08d8827 0092264 56d7455 e081a20 78c2077 eed43c2 956ad51 abaf6cd 224b1b5ab7 854e5e1987 da164c59e0 dca9441e25 7a57646250 caaa1b3e2f 26611c92b4 a7b4c2b414 e45e3f1f48 dd44c7bfb1 7a79a0f558
 git -C lg510s-packages checkout -b build-lg510s f8c970bb8a
 git -C lg510s-packages cherry-pick 3a6f1a1 eedfed5e6e 461a8364d4 741da735a6 522c2ebc1c e6e194bc63 36d367f747 bd06a15fa2 1e79e47052 80feb8196a 1b6091150e 3550aced0f 819f640396 b8a77287c4 98d8d5098a 087c378c0e 0e77b38ad9 e412bfb5a3 37f95ab4bd c6ca3c57e3
 cd openwrt-lg510s
@@ -80,6 +80,10 @@ CONFIG_PACKAGE_luci-app-unifi-agent=y
 CONFIG_PACKAGE_luci-app-statistics=y
 CONFIG_PACKAGE_collectd-mod-thermal=y
 CONFIG_PACKAGE_collectd-mod-sensors=y
+CONFIG_PACKAGE_prometheus-node-exporter-lua=y
+CONFIG_PACKAGE_prometheus-node-exporter-lua-ethtool=y
+CONFIG_PACKAGE_prometheus-node-exporter-lua-hwmon=y
+CONFIG_PACKAGE_prometheus-node-exporter-lua-thermal=y
 CONFIG_PACKAGE_luci-theme-footstrap=y
 EOF
 make defconfig
@@ -137,7 +141,7 @@ Stock U-Boot needs no change: its default `bootcmd=boota` loads OpenWrt. Putting
 - **Management address.** `/etc/uci-defaults/09_lg510s_mgmt` turns OpenWrt's untouched static default into a DHCP client (`proto 'dhcp'`, `retry '3'`), drops `ip6assign` and the ULA prefix, and sets `ipv6 '0'` on the `lan` device (`switch.1`), the option behind LuCI's Enable IPv6 checkbox. It runs once (marker `/etc/lg510s/mgmt-default`) and leaves any other configuration alone. While `lan` holds no lease, `/etc/udhcpc.user.d/lg510s-fallback` gives it `192.168.1.1/24` through netifd on each `leasefail`, so the lan firewall zone applies; a later lease replaces it. `retry` matters: with OpenWrt's default `-t 0` udhcpc retries forever and never reports `leasefail`. The bridge itself carries VLAN 1 tagged only and `eth0` is the CPU conduit, so neither needs IPv6 turned off. The fallback was tested on a throwaway interface; the full first boot is not yet tested. If the network already uses `192.168.1.1` and its DHCP server is down, the fallback address conflicts with it.
 - **Network reload.** On 2026-10-31, setting `ipv6 '0'` on the `eth0`, `switch` and `switch.1` device sections and running `/etc/init.d/network reload` made the switch unreachable; the reload that restored the old configuration did not bring it back, and only a power cycle did. The cause is not known; LuCI's Save & Apply on device settings may trigger the same reload.
 - **Temperatures.** The SoC sensor (`thermal_zone0`, `cpu-thermal`) and the four RTL8264B PHY sensors (hwmon, one per copper port) are read by two LuCI patches: Status -> Overview shows the CPU temperature, and Status -> Ports shows each port's temperature. The overview reads `/sys/devices/virtual/thermal/thermal_zone0/temp`, not the `/sys/class/thermal` symlink: rpcd checks file ACLs against the resolved path, so an ACL on the symlink is never matched. A DSA port has no `phydev` link in sysfs, so the RPC finds its PHY through the device tree `phy-handle`. SFP+ ports show the module's own temperature (`ethtool -m`, `module_temperature_measurement`) when the module has diagnostics; the passive DAC used in testing has none. `luci-app-statistics` with the thermal and sensors plugins graphs them under Statistics -> Graphs; `/etc/uci-defaults/10_lg510s_statistics` enables both plugins once. The graph history is kept in RAM and starts over after a reboot.
-- **Theme.** The image includes `luci-theme-footstrap`, and `/etc/uci-defaults/11_lg510s_footstrap` makes it the default theme with its sidebar layout, once (marker `/etc/lg510s/footstrap-default`). Choose another theme under System -> System -> Language and Style, or another Footstrap layout under System -> Footstrap. The Ports page sets its own card width, because themes size `.ifacebox` for the small overview badges (OpenWrt 2020 caps it at 150 px).
+- **Theme.** The image includes `luci-theme-footstrap`, and `/etc/uci-defaults/11_lg510s_footstrap` makes it the default theme with its sidebar layout, once (marker `/etc/lg510s/footstrap-default`). Choose another theme under System -> System -> Language and Style, or another Footstrap layout under System -> Footstrap. The Ports page uses the standard section and table markup, so every theme styles it like its other status pages.
 - **Switch features.** `switchdev-config` adds its rules with `skip_sw`: a rule the switch cannot offload fails and is logged (`logread | grep switchdev`) instead of running on the CPU. Ingress limits need `kmod-sched-flower` and `kmod-sched-act-police`, which the package pulls in. `tc -j` does not report a police rate, so the Rate limiting page shows the configured incoming limit next to the hardware state.
 
 ## Fan
