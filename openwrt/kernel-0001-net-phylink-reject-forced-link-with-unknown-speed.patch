@@ -1,0 +1,36 @@
+From: Andre Brait
+Subject: [PATCH] net: phylink: reject a forced link with unknown speed or duplex
+
+With autoneg disabled, phylink_ethtool_ksettings_set() looks up the
+requested speed with an inexact phy_caps_lookup(). SPEED_UNKNOWN (-1)
+never matches, so the lookup returns the slowest supported mode.
+
+netifd reads the link settings and writes them back unchanged when a
+device has pause, asym_pause, speed, duplex or autoneg set. On an SFP+
+port whose link is still down, the read returns autoneg off and
+SPEED_UNKNOWN, so the write-back forces 1000 Mb/s and phylink switches
+a 10GBASE-R port to 1000base-x. The 10G link never comes back.
+
+phylib already rejects this through phy_check_valid(). Do the same in
+phylink and return -EINVAL.
+
+---
+--- a/drivers/net/phy/phylink.c
++++ b/drivers/net/phy/phylink.c
+@@ -3331,8 +3331,16 @@
+ 	switch (kset->base.autoneg) {
+ 	case AUTONEG_DISABLE:
+ 		/* Autonegotiation disabled, select a suitable speed and
++		 * duplex.
++		 */
++		/* An inexact lookup maps SPEED_UNKNOWN to the slowest
++		 * supported mode, so a forced link needs a real speed and
+ 		 * duplex.
+ 		 */
++		if (kset->base.speed == SPEED_UNKNOWN ||
++		    kset->base.duplex == DUPLEX_UNKNOWN)
++			return -EINVAL;
++
+ 		c = phy_caps_lookup(kset->base.speed, kset->base.duplex,
+ 				    pl->supported, false);
+ 		if (!c)

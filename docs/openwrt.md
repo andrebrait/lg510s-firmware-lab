@@ -53,6 +53,7 @@ git -C lg510s-packages cherry-pick 3a6f1a1 eedfed5e6e 461a8364d4 741da735a6 522c
 cd openwrt-lg510s
 git checkout -b build-lg510s 6f628a16f1
 git apply --include='target/linux/realtek/base-files/**' "$LAB/openwrt/0001-realtek-rtl930x-add-Lianguo-LG510S-4T2XS.patch"
+cp "$LAB/openwrt/kernel-0001-net-phylink-reject-forced-link-with-unknown-speed.patch" target/linux/realtek/patches-6.18/900-net-phylink-reject-forced-link-with-unknown-speed.patch
 printf 'src-link packages %s/../lg510s-packages\nsrc-link luci %s/../lg510s-luci\n' "$PWD" "$PWD" > feeds.conf
 ./scripts/feeds update packages luci
 ./scripts/feeds install -a
